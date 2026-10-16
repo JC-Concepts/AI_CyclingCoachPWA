@@ -21,7 +21,7 @@ var CONFIG = {
     // APIs
     intervalsBase: 'https://intervals.icu/api/v1',
     openRouterBase: 'https://openrouter.ai/api/v1',
-    googleClientId: '',
+    googleClientId: '335294954193-q97t0hhu0hl5cues5l74qkdn9e21sn5u.apps.googleusercontent.com',
     pyodideVersion: '0.27.7',
 
     // Timings / limits
