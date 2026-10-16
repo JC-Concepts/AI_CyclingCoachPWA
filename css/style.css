@@ -147,15 +147,19 @@ body {
 }
 
 .install-btn-header, .donate-btn-header {
-    vertical-align: middle;
-    line-height: 1.25;
+    appearance: none;
     align-items: center;
     display: inline-flex;
+    justify-content: center;
     height: 40px;
     min-height: 40px;
     max-height: 40px;
     padding: 0.5rem 1rem;
     box-sizing: border-box;
+    margin: 0;
+    font-size: 0.875rem;
+    font-weight: 600;
+    line-height: 1.25;
 }
     background: none;
     border: none;
@@ -302,7 +306,7 @@ body {
 #installBtn {
     background-color: #22c55e;
     color: white;
-    margin-bottom: 0.75rem;
+    margin-bottom: 0;
 }
 
 #installBtn:hover {
@@ -945,21 +949,6 @@ body {
 
 .tab-panel { display: none; padding: 1rem; }
 .tab-panel.active { display: block; }
-
-.install-btn-header {
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-    background: var(--bg-tertiary);
-    color: var(--text-primary);
-    border: none;
-    border-radius: 8px;
-    padding: 0.5rem 0.75rem;
-    font-size: 0.85rem;
-    cursor: pointer;
-}
-.install-btn-header svg { width: 16px; height: 16px; }
-.install-btn-header:hover { background: var(--primary-dark); }
 
 .dashboard {
     background: var(--bg-secondary);
