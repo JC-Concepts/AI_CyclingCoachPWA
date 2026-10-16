@@ -164,12 +164,18 @@
 
     GoogleDriveStore.prototype._parsePath = function (path) {
         var parts = String(path).replace(/\\/g, '/').split('/');
-        if (parts.length !== 3 || parts[0] !== 'Users' ||
+        if ((parts.length !== 3 && parts.length !== 4) || parts[0] !== 'Users' ||
                 !parts[1] || parts[1] === '.' || parts[1] === '..' ||
-                !parts[2] || parts[2] === '.' || parts[2] === '..') {
+                !parts[2] || parts[2] === '.' || parts[2] === '..' ||
+                (parts.length === 4 && (parts[2] !== 'sessions' ||
+                    !parts[3] || parts[3] === '.' || parts[3] === '..'))) {
             throw new Error('Invalid athlete data path.');
         }
-        return { athleteId: parts[1], fileName: parts[2] };
+        return {
+            athleteId: parts[1],
+            fileName: parts.length === 4 ? parts[3] : parts[2],
+            inSessions: parts.length === 4
+        };
     };
 
     GoogleDriveStore.prototype._escapeQueryValue = function (value) {
@@ -219,7 +225,40 @@
             var athlete = await this._ensureFolder(parsed.athleteId, this._rootFolderId);
             this._athleteFolderIds[parsed.athleteId] = athlete.id;
         }
-        return { id: this._athleteFolderIds[parsed.athleteId], fileName: parsed.fileName };
+        var parentId = this._athleteFolderIds[parsed.athleteId];
+        if (parsed.inSessions) {
+            var sessionFolderKey = parsed.athleteId + '/sessions';
+            if (!this._athleteFolderIds[sessionFolderKey]) {
+                var sessions = await this._ensureFolder('sessions', parentId);
+                this._athleteFolderIds[sessionFolderKey] = sessions.id;
+            }
+            parentId = this._athleteFolderIds[sessionFolderKey];
+        }
+        return { id: parentId, fileName: parsed.fileName };
+    };
+
+    GoogleDriveStore.prototype.listFiles = async function (directoryPath) {
+        var parts = String(directoryPath).replace(/\\/g, '/').split('/');
+        if (parts.length !== 3 || parts[0] !== 'Users' || !parts[1] ||
+                parts[1] === '.' || parts[1] === '..' || parts[2] !== 'sessions') {
+            throw new Error('Invalid chat session directory.');
+        }
+        var parent = await this._parentFolderId(parts.join('/') + '/index.json');
+        var files = [];
+        var pageToken = '';
+        do {
+            var query = "'" + this._escapeQueryValue(parent.id) + "' in parents and trashed=false";
+            var url = DRIVE_API + '/files?spaces=drive&fields=nextPageToken,files(id,name,mimeType,modifiedTime,headRevisionId)' +
+                '&pageSize=100&q=' + encodeURIComponent(query);
+            if (pageToken) url += '&pageToken=' + encodeURIComponent(pageToken);
+            var response = await this._authorizedFetch(url);
+            var data = await response.json();
+            if (Array.isArray(data.files)) files = files.concat(data.files);
+            pageToken = data.nextPageToken || '';
+        } while (pageToken);
+        return files.filter(function (file) {
+            return file.mimeType !== 'application/vnd.google-apps.folder' && /\.json$/i.test(file.name || '');
+        });
     };
 
     GoogleDriveStore.prototype._lookup = async function (path) {
@@ -260,6 +299,15 @@
         } catch (error) {
             throw new Error('Invalid JSON stored in Google Drive for ' + path + ': ' + error.message);
         }
+    };
+
+    GoogleDriveStore.prototype.deleteFile = async function (path) {
+        var file = await this._lookup(path);
+        if (!file) return false;
+        await this._authorizedFetch(DRIVE_API + '/files/' + encodeURIComponent(file.id), {
+            method: 'DELETE'
+        });
+        return true;
     };
 
     GoogleDriveStore.prototype.putFile = async function (path, text, expectedVersion) {

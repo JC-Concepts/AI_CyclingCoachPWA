@@ -27,6 +27,10 @@
         this.skillsReady = Promise.resolve();
         this.dossierCache = '';
         this._memTimer = null;
+        this.chatSessions = [];
+        this.activeChatSessionId = '';
+        this.deletedChatSessionIds = [];
+        this.chatSessionsAthleteId = '';
     }
 
     // -------------------------------------------------------------- lifecycle
@@ -58,6 +62,14 @@
         this._bind('connectDriveBtn', 'click', function () { self.connectDrive(); });
         this._bind('disconnectDriveBtn', 'click', function () { self.disconnectDrive(); });
         this._bind('reloadDataBtn', 'click', function () { self.reloadAthleteData(); });
+        window.addEventListener('online', function () {
+            if (self.drive.isConnected()) {
+                self.syncChatSessions().catch(function (error) {
+                    self.ui.setSessionSyncStatus('Saved on this device · Drive sync failed', 'error');
+                    self.ui.showToast('Chat sync could not resume: ' + error.message, 'warning');
+                });
+            }
+        });
         this._bind('importLegacyBtn', 'click', function () { self.importLegacyFiles(); });
         this._bind('applyFiltersBtn', 'click', function () { self.filterWorkouts(); });
         this._bind('resetFiltersBtn', 'click', function () { self.resetFilters(); });
@@ -93,12 +105,23 @@
         this.loadCachedData();
         this.refreshDashboard();
         this.loadMemoryFromStorage();
+        this.loadChatSessions();
         await this.loadCatalog();
         this.loadModels(false);
         this.startMemoryFlush();
         await this.loadAthleteData().catch(function (error) {
             self.ui.showToast('Could not load private Google Drive data: ' + error.message, 'warning');
         });
+    };
+
+    App.prototype._newOngoingChatSession = function () {
+        return {
+            id: 'ongoing',
+            title: 'Your conversation with Coach',
+            created_at: '',
+            updated_at: '',
+            messages: []
+        };
     };
 
     App.prototype._bind = function (id, ev, fn) {
@@ -200,9 +223,13 @@
 
     // -------------------------------------------------------------- settings
     App.prototype.saveSettings = function () {
+        var previousAthleteId = this.storage.getSettings().athleteId || '';
         var s = this.ui.readSettingsForm();
         var v = window.CoachSettings.validateSettings(s);
         this.storage.saveSettings(s);
+        if ((s.athleteId || '') !== previousAthleteId) {
+            this.loadChatSessions();
+        }
         this.ui.showToast(v.ok ? 'Settings saved.' : 'Saved, but some fields are still missing.', v.ok ? 'success' : 'warning');
         this.refreshDashboard();
     };
@@ -213,7 +240,7 @@
             await this.drive.connect(CONFIG.googleClientId);
             this.ui.setDriveStatus(true);
             await this.loadAthleteData();
-            if (this.storage.getPendingFlush()) await this.flushMemory();
+            if (this.storage.getPendingFlush(this.storage.getSettings().athleteId)) await this.flushMemory();
             this.ui.hideLoading();
             this.ui.showToast('Google Drive connected for this session.', 'success');
         } catch (error) {
@@ -226,6 +253,7 @@
     App.prototype.disconnectDrive = function () {
         this.drive.disconnect();
         this.ui.setDriveStatus(false);
+        this.renderChatSession();
         this.ui.showToast('Google Drive disconnected. Local cached data remains on this device.', 'info');
     };
 
@@ -368,7 +396,219 @@
         var d = await this.drive.getFile(p.file('dossier', '.md'));
         if (d && d.text) { this.dossierCache = d.text; this.storage.setCachedData('dossier.md', d.text); }
         await this.loadRemoteMemory();
+        await this.syncChatSessions();
         this.refreshDashboard();
+    };
+
+    // --------------------------------------------------------- chat sessions
+    App.prototype._saveChatArchive = function () {
+        return this.storage.setChatSessions(this.chatSessionsAthleteId, {
+            activeId: this.activeChatSessionId,
+            sessions: this.chatSessions,
+            deletedIds: this.deletedChatSessionIds
+        });
+    };
+
+    App.prototype._importLegacyMemory = function () {
+        var memory = this.getMemory();
+        var athleteId = this.chatSessionsAthleteId;
+        if (memory.athlete_id && memory.athlete_id !== athleteId) return false;
+        var legacy = window.ChatSessions.fromLegacy(memory);
+        if (!legacy) return false;
+        var index = this.chatSessions.findIndex(function (session) { return session.id === 'ongoing'; });
+        if (index < 0) {
+            this.chatSessions.push(this._newOngoingChatSession());
+            index = this.chatSessions.length - 1;
+        }
+        this.chatSessions[index] = window.ChatSessions.merge(this.chatSessions[index], legacy);
+        return true;
+    };
+
+    App.prototype._finishLegacyMemoryMigration = function () {
+        var memory = this.getMemory();
+        if (!memory.messages || !memory.messages.length) return;
+        memory.messages = [];
+        memory.updated_at = new Date().toISOString();
+        if (!this.storage.setMemory(memory, this.chatSessionsAthleteId)) {
+            this.ui.showToast('Legacy chat was imported, but its old local memory copy could not be cleared.', 'warning');
+            return;
+        }
+        if (!this.storage.setPendingFlush(true, this.chatSessionsAthleteId)) {
+            this.ui.showToast('The previous chat was imported, but its Drive sync could not be queued.', 'warning');
+        }
+    };
+
+    App.prototype.loadChatSessions = function () {
+        this.chatSessionsAthleteId = this.storage.getSettings().athleteId || '';
+        var archive = this.storage.getChatSessions(this.chatSessionsAthleteId);
+        this.chatSessions = [];
+        this.deletedChatSessionIds = Array.isArray(archive.deletedIds) ? archive.deletedIds : [];
+        this.activeChatSessionId = 'ongoing';
+        var ongoing = this._newOngoingChatSession();
+        (Array.isArray(archive.sessions) ? archive.sessions : []).forEach(function (session) {
+            ongoing = window.ChatSessions.merge(ongoing, session);
+        });
+        this.chatSessions.push(ongoing);
+        var importedLegacyMemory = this._importLegacyMemory();
+        ongoing = this.chatSessions.find(function (session) { return session.id === 'ongoing'; });
+        ongoing.title = 'Your conversation with Coach';
+        var archiveSaved = this._saveChatArchive();
+        if (archiveSaved && importedLegacyMemory) this._finishLegacyMemoryMigration();
+        if (!archiveSaved) this.ui.showToast('Chat history could not be saved locally; previous data was left unchanged.', 'warning');
+        this.renderChatSession();
+    };
+
+    App.prototype.getActiveChatSession = function () {
+        var id = this.activeChatSessionId;
+        return this.chatSessions.find(function (session) { return session.id === id; }) || null;
+    };
+
+    App.prototype.renderChatSession = function () {
+        var session = this.getActiveChatSession();
+        var status = 'Saved on this device';
+        if (session && session._synced_at && session._synced_at >= session.updated_at) {
+            status = 'Saved to Google Drive';
+        } else if (session && session.messages && session.messages.length) {
+            status = this.drive.isConnected() ? 'Sync pending' : 'Saved on this device · sync pending';
+        }
+        this.ui.renderChatSession(session, status);
+    };
+
+    App.prototype.ensureActiveChatSession = function () {
+        var session = this.getActiveChatSession();
+        if (!session) {
+            session = this._newOngoingChatSession();
+            this.chatSessions.push(session);
+            this.activeChatSessionId = 'ongoing';
+            this._saveChatArchive();
+        }
+        return session;
+    };
+
+    App.prototype.recordChatMessage = function (role, text) {
+        var session = this.ensureActiveChatSession();
+        session = window.ChatSessions.addMessage(session, role, text);
+        var index = this.chatSessions.findIndex(function (item) { return item.id === session.id; });
+        this.chatSessions[index] = session;
+        var title = document.getElementById('activeChatTitle');
+        if (title && session.id === this.activeChatSessionId) title.textContent = session.title;
+        if (!this._saveChatArchive()) {
+            this.ui.setSessionSyncStatus('Local save failed', 'error');
+            this.ui.showToast('The chat could not be saved on this device. Free storage and try again.', 'error');
+            return false;
+        }
+        this.ui.setSessionSyncStatus(this.drive.isConnected() ? 'Sync pending' :
+            'Saved on this device · sync pending', 'pending');
+        return true;
+    };
+
+    App.prototype._chatSessionPath = function (id) {
+        var athleteId = this.storage.getSettings().athleteId;
+        return 'Users/' + athleteId + '/sessions/' + id + '.json';
+    };
+
+    App.prototype._syncOneChatSession = async function (session, remoteFile) {
+        var path = this._chatSessionPath(session.id);
+        var remote = null;
+        if (remoteFile) {
+            try { remote = JSON.parse(remoteFile.text); }
+            catch (error) { throw new Error('Invalid saved chat in Google Drive: ' + error.message); }
+        }
+        var merged = window.ChatSessions.merge(session, remote);
+        var localPayload = JSON.stringify(window.ChatSessions.forDrive(merged));
+        var remotePayload = remote ? JSON.stringify(window.ChatSessions.forDrive(remote)) : '';
+        if (localPayload !== remotePayload) {
+            try {
+                await this.drive.putFile(path, localPayload, remoteFile ? remoteFile.sha : null);
+            } catch (error) {
+                if (error.code !== 409) throw error;
+                var latest = await this.drive.getFile(path);
+                var latestSession = latest ? JSON.parse(latest.text) : null;
+                merged = window.ChatSessions.merge(merged, latestSession);
+                await this.drive.putFile(path, JSON.stringify(window.ChatSessions.forDrive(merged)),
+                    latest ? latest.sha : null);
+            }
+        }
+        merged._synced_at = merged.updated_at;
+        return merged;
+    };
+
+    App.prototype.saveChatSessionToDrive = async function (session) {
+        if (!session || !session.messages.length) return;
+        var settings = this.storage.getSettings();
+        if (!settings.athleteId || !this.drive.isConnected()) {
+            this.ui.setSessionSyncStatus('Saved on this device · sync pending', 'pending');
+            return;
+        }
+        try {
+            var remoteFile = await this.drive.getFile(this._chatSessionPath('ongoing'));
+            var saved = await this._syncOneChatSession(session, remoteFile);
+            this.chatSessions[0] = saved;
+            var archiveSaved = this._saveChatArchive();
+            if (!archiveSaved) {
+                this.ui.setSessionSyncStatus('Drive saved · local status could not be updated', 'error');
+                this.ui.showToast('Chat was saved to Google Drive, but local sync status could not be updated.', 'warning');
+            }
+            if (archiveSaved) {
+                this.ui.setSessionSyncStatus('Saved to Google Drive', 'saved');
+            }
+        } catch (error) {
+            this.ui.setSessionSyncStatus('Saved on this device · Drive sync failed', 'error');
+            this.ui.showToast('Chat saved locally; Google Drive sync failed: ' + error.message, 'warning');
+        }
+    };
+
+    App.prototype.syncChatSessions = async function () {
+        var settings = this.storage.getSettings();
+        if (!settings.athleteId || !this.drive.isConnected()) return;
+        var directory = 'Users/' + settings.athleteId + '/sessions';
+        var files = await this.drive.listFiles(directory);
+        var filesById = Object.create(null);
+        var deleted = this.deletedChatSessionIds.slice();
+        var session = this.getActiveChatSession() ||
+            this._newOngoingChatSession();
+        for (var i = 0; i < files.length; i++) {
+            var match = /^([A-Za-z0-9_-]+)\.json$/i.exec(files[i].name || '');
+            if (!match) continue;
+            var remotePath = directory + '/' + files[i].name;
+            if (deleted.indexOf(match[1]) >= 0) {
+                await this.drive.deleteFile(remotePath);
+                continue;
+            }
+            var remoteFile = await this.drive.getFile(remotePath);
+            if (!remoteFile) continue;
+            var remoteSession;
+            try { remoteSession = JSON.parse(remoteFile.text); }
+            catch (error) { throw new Error('Invalid saved chat in Google Drive (' +
+                files[i].name + '): ' + error.message); }
+            remoteSession.id = match[1];
+            filesById[match[1]] = remoteFile;
+            session = window.ChatSessions.merge(session, remoteSession);
+        }
+
+        this.deletedChatSessionIds = [];
+        session.id = 'ongoing';
+        session.title = 'Your conversation with Coach';
+        this.chatSessions = [session];
+        this.activeChatSessionId = 'ongoing';
+        if (!this._saveChatArchive()) {
+            this.ui.showToast('The merged chat history could not be saved locally.', 'warning');
+        }
+
+        if (session.messages && session.messages.length) {
+            session = await this._syncOneChatSession(session, filesById.ongoing || null);
+            this.chatSessions[0] = session;
+            for (var j = 0; j < files.length; j++) {
+                var oldMatch = /^([A-Za-z0-9_-]+)\.json$/i.exec(files[j].name || '');
+                if (oldMatch && oldMatch[1] !== 'ongoing' && deleted.indexOf(oldMatch[1]) < 0) {
+                    await this.drive.deleteFile(directory + '/' + files[j].name);
+                }
+            }
+        }
+        if (!this._saveChatArchive()) {
+            this.ui.showToast('The updated chat could not be saved locally.', 'warning');
+        }
+        this.renderChatSession();
     };
 
     App.prototype.refreshDashboard = function () {
@@ -497,18 +737,14 @@
 
     // -------------------------------------------------------------- memory
     App.prototype.getMemory = function () {
-        return this.storage.getMemory() || window.CoachMemory.createEmpty(this.storage.getSettings().athleteId);
-    };
-    App.prototype.appendMemory = function (role, text) {
-        if (!text) return;
-        var mem = window.CoachMemory.appendTurn(this.getMemory(), { role: role, text: text });
-        this.storage.setMemory(mem);
-        this.storage.setPendingFlush(true);
+        var id = this.storage.getSettings().athleteId;
+        return this.storage.getMemory(id) || window.CoachMemory.createEmpty(id);
     };
     App.prototype.loadMemoryFromStorage = function () {
-        if (!this.storage.getMemory()) {
-            this.storage.setMemory(window.CoachMemory.createEmpty(this.storage.getSettings().athleteId));
-        }
+        var id = this.storage.getSettings().athleteId;
+        var memory = this.storage.getMemory(id);
+        if (!memory) memory = window.CoachMemory.createEmpty(id);
+        this.storage.setMemory(memory, id);
     };
     App.prototype.loadRemoteMemory = async function () {
         var id = this.storage.getSettings().athleteId;
@@ -516,7 +752,13 @@
         var remote = await this.drive.getJSON(new AthletePath(id).file('memory'));
         if (remote && remote.messages) {
             var merged = window.CoachMemory.mergeMemory(this.getMemory(), remote);
-            this.storage.setMemory(merged);
+            this.storage.setMemory(merged, id);
+            var importedLegacyMemory = this._importLegacyMemory();
+            var archiveSaved = this._saveChatArchive();
+            if (archiveSaved && importedLegacyMemory) this._finishLegacyMemoryMigration();
+            if (!archiveSaved) {
+                this.ui.showToast('Previous Drive chat could not be saved locally; existing data was left unchanged.', 'warning');
+            }
         }
     };
 
@@ -526,17 +768,15 @@
         window.addEventListener('pagehide', function () { self.flushMemory(); });
     };
 
-    App.prototype.maybeFlushMemory = function () { /* diff guard runs on the timer; nothing eager here */ };
-
     App.prototype.flushMemory = async function () {
         var id = this.storage.getSettings().athleteId;
         if (!id) return false;
         if (!this.drive.isConnected()) {
-            this.storage.setPendingFlush(true);
+            this.storage.setPendingFlush(true, id);
             return false;
         }
         var mem = this.getMemory();
-        var last = this.storage.getLastPushHash();
+        var last = this.storage.getLastPushHash(id);
         var changed = await window.CoachMemory.needsPush(mem, last);
         if (!changed) return false;
 
@@ -553,20 +793,20 @@
                     mem = window.CoachMemory.mergeMemory(mem, remote);
                     await this.drive.putFile(path, JSON.stringify(mem, null, 1), latest ? latest.sha : null);
                 } catch (retryError) {
-                    this.storage.setPendingFlush(true);
+                    this.storage.setPendingFlush(true, id);
                     this.ui.showToast('Memory remains on this device; Google Drive merge failed: ' +
                         retryError.message, 'warning');
                     return false;
                 }
             } else {
-                this.storage.setPendingFlush(true);
+                this.storage.setPendingFlush(true, id);
                 this.ui.showToast('Memory is saved locally; Google Drive write failed: ' + e.message, 'warning');
                 return false;
             }
         }
-        this.storage.setMemory(mem);
-        this.storage.setLastPushHash(await window.CoachMemory.contentHash(mem));
-        this.storage.setPendingFlush(false);
+        this.storage.setMemory(mem, id);
+        this.storage.setLastPushHash(await window.CoachMemory.contentHash(mem), id);
+        this.storage.setPendingFlush(false, id);
         return true;
     };
 

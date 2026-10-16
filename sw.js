@@ -1,5 +1,5 @@
 /* AI Cycling Coach - service worker (relative paths only) */
-const CACHE_NAME = 'ai-cycling-coach-v4';
+const CACHE_NAME = 'ai-cycling-coach-v5';
 const ASSETS_TO_CACHE = [
     './',
     './index.html',
@@ -13,6 +13,7 @@ const ASSETS_TO_CACHE = [
     './js/catalog.js',
     './js/context.js',
     './js/memory.js',
+    './js/chat-sessions.js',
     './js/prompt.js',
     './js/google-drive.js',
     './js/local-sync.js',

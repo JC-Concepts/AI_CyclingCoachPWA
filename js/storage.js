@@ -13,6 +13,7 @@
         settings: 'coach.settings.v1',
         memory: 'coach.memory.v1',
         memoryPending: 'coach.memory.pending',
+        chatSessions: 'coach.chatSessions.v1',
         models: 'coach.models.v1',
         dataCache: 'coach.cache.v1',
         firstLaunch: 'coach.firstLaunch',
@@ -77,23 +78,63 @@
     };
 
     // ---- memory ----
-    StorageManager.prototype.getMemory = function () {
-        return this.getJSON(KEYS.memory, null);
-    };
     StorageManager.prototype.setMemory = function (mem) {
-        return this.setJSON(KEYS.memory, mem);
+        var athleteId = arguments.length > 1 ? arguments[1] : (mem && mem.athlete_id);
+        var key = this._athleteKey(KEYS.memory, athleteId);
+        var saved = this.setJSON(key, mem);
+        if (saved && athleteId) {
+            var legacy = this.getJSON(KEYS.memory, null);
+            if (legacy && (!legacy.athlete_id || legacy.athlete_id === athleteId)) {
+                var pending = this.getJSON(KEYS.memoryPending, null);
+                var hash = this._get(KEYS.lastPush);
+                if (pending !== null) this.setJSON(this._athleteKey(KEYS.memoryPending, athleteId), pending);
+                if (hash) this._set(this._athleteKey(KEYS.lastPush, athleteId), hash);
+                this._remove(KEYS.memory);
+                this._remove(KEYS.memoryPending);
+                this._remove(KEYS.lastPush);
+            }
+        }
+        return saved;
     };
-    StorageManager.prototype.getPendingFlush = function () {
-        return this.getJSON(KEYS.memoryPending, false) === true;
+    StorageManager.prototype._athleteKey = function (key, athleteId) {
+        return athleteId ? key + '.' + encodeURIComponent(String(athleteId)) : key;
     };
-    StorageManager.prototype.setPendingFlush = function (flag) {
-        return this.setJSON(KEYS.memoryPending, !!flag);
+    StorageManager.prototype.getMemory = function (athleteId) {
+        var scoped = this.getJSON(this._athleteKey(KEYS.memory, athleteId), null);
+        if (scoped || !athleteId) return scoped;
+        var legacy = this.getJSON(KEYS.memory, null);
+        return legacy && (!legacy.athlete_id || legacy.athlete_id === athleteId) ? legacy : null;
     };
-    StorageManager.prototype.getLastPushHash = function () {
-        return this._get(KEYS.lastPush) || '';
+    StorageManager.prototype.getPendingFlush = function (athleteId) {
+        var key = this._athleteKey(KEYS.memoryPending, athleteId);
+        var scoped = this.getJSON(key, null);
+        if (scoped !== null) return scoped === true;
+        var memory = this.getMemory(athleteId);
+        return !!memory && this.getJSON(KEYS.memoryPending, false) === true;
     };
-    StorageManager.prototype.setLastPushHash = function (hash) {
-        return this._set(KEYS.lastPush, hash || '');
+    StorageManager.prototype.setPendingFlush = function (flag, athleteId) {
+        return this.setJSON(this._athleteKey(KEYS.memoryPending, athleteId), !!flag);
+    };
+    StorageManager.prototype.getLastPushHash = function (athleteId) {
+        var key = this._athleteKey(KEYS.lastPush, athleteId);
+        var scoped = this._get(key);
+        if (scoped !== null) return scoped;
+        if (!athleteId) return '';
+        return this.getMemory(athleteId) ? (this._get(KEYS.lastPush) || '') : '';
+    };
+    StorageManager.prototype.setLastPushHash = function (hash, athleteId) {
+        return this._set(this._athleteKey(KEYS.lastPush, athleteId), hash || '');
+    };
+
+    // ---- chat history ----
+    StorageManager.prototype._chatSessionsKey = function (athleteId) {
+        return KEYS.chatSessions + '.' + encodeURIComponent(String(athleteId || '_default'));
+    };
+    StorageManager.prototype.getChatSessions = function (athleteId) {
+        return this.getJSON(this._chatSessionsKey(athleteId), { activeId: '', sessions: [], deletedIds: [] });
+    };
+    StorageManager.prototype.setChatSessions = function (athleteId, archive) {
+        return this.setJSON(this._chatSessionsKey(athleteId), archive);
     };
 
     // ---- data cache (latest.json etc.) ----

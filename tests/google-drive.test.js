@@ -96,6 +96,38 @@ test('new files are saved under AI Coach/<AthleteID>', async () => {
     assert.equal(metadata.name, 'i1_memory.json');
 });
 
+test('ongoing chat transcript is stored under the sessions subfolder', async () => {
+    class TestBlob {
+        constructor(parts, options) { this.parts = parts; this.type = options.type; }
+    }
+    class TestFormData {
+        constructor() { this.values = {}; }
+        append(name, value) { this.values[name] = value; }
+    }
+    const calls = [];
+    const store = await connectedStore(async function (url, options) {
+        calls.push({ url: url, options: options });
+        const query = decodeURIComponent(url);
+        if (options && options.method === 'POST' && !url.includes('/upload/')) {
+            const metadata = JSON.parse(options.body);
+            return response(200, { id: metadata.name.toLowerCase().replace(/\s/g, '-') + '-folder' });
+        }
+        if (url.includes('/upload/')) {
+            return response(200, { id: 'chat-file', name: 'ongoing.json', headRevisionId: 'rev-1' });
+        }
+        return response(200, { files: [] });
+    }, { FormData: TestFormData, Blob: TestBlob });
+
+    await store.putFile('Users/i1/sessions/ongoing.json', '{"messages":[]}', null);
+    const folderMetadata = calls.filter(call => call.options.method === 'POST' &&
+        !call.url.includes('/upload/')).map(call => JSON.parse(call.options.body));
+    const upload = calls.find(call => call.url.includes('/upload/'));
+    const fileMetadata = JSON.parse(upload.options.body.values.metadata.parts[0]);
+    assert.deepEqual(folderMetadata.map(folder => folder.name), ['AI Coach', 'i1', 'sessions']);
+    assert.deepEqual(fileMetadata.parents, ['sessions-folder']);
+    assert.equal(fileMetadata.name, 'ongoing.json');
+});
+
 test('a changed Drive revision is reported as a conflict', async () => {
     const store = await connectedStore(async function (url) {
         if (url.indexOf('/files?') >= 0 && decodeURIComponent(url).indexOf('mimeType=') !== -1) {
@@ -108,9 +140,49 @@ test('a changed Drive revision is reported as a conflict', async () => {
     });
 });
 
+test('chat session files are listed from the athlete sessions folder with pagination', async () => {
+    const calls = [];
+    const store = await connectedStore(async function (url, options) {
+        calls.push({ url: url, options: options });
+        if (calls.length === 1) return response(200, { files: [{ id: 'coach-folder' }] });
+        if (calls.length === 2) return response(200, { files: [{ id: 'athlete-folder' }] });
+        if (calls.length === 3) return response(200, { files: [{ id: 'sessions-folder' }] });
+        if (calls.length === 4) return response(200, {
+            files: [{ id: 'session-file-1', name: 'session-1.json', mimeType: 'application/json' }],
+            nextPageToken: 'page-2'
+        });
+        return response(200, {
+            files: [{ id: 'session-file-2', name: 'session-2.json', mimeType: 'application/json' }]
+        });
+    });
+
+    const files = await store.listFiles('Users/i1/sessions');
+    assert.deepEqual(files.map(file => file.name), ['session-1.json', 'session-2.json']);
+    assert.match(decodeURIComponent(calls[2].url), /name='sessions'/);
+    assert.match(calls[4].url, /pageToken=page-2/);
+});
+
+test('chat session files can be deleted from Google Drive', async () => {
+    const calls = [];
+    const store = await connectedStore(async function (url, options) {
+        calls.push({ url: url, options: options });
+        if (options && options.method === 'DELETE') return response(204, null);
+        const query = decodeURIComponent(url);
+        if (query.indexOf("name='AI Coach'") >= 0) return response(200, { files: [{ id: 'coach-folder' }] });
+        if (query.indexOf("name='i1'") >= 0) return response(200, { files: [{ id: 'athlete-folder' }] });
+        if (query.indexOf("name='sessions'") >= 0) return response(200, { files: [{ id: 'sessions-folder' }] });
+        return response(200, { files: [{ id: 'session-file' }] });
+    });
+
+    assert.equal(await store.deleteFile('Users/i1/sessions/session-1.json'), true);
+    assert.equal(calls[calls.length - 1].options.method, 'DELETE');
+    assert.match(calls[calls.length - 1].url, /session-file/);
+});
+
 test('invalid logical data paths are rejected', async () => {
     const store = await connectedStore(function () { throw new Error('unexpected request'); });
     await assert.rejects(store.getFile('Users/../secrets.json'), /Invalid athlete data path/);
+    await assert.rejects(store.getFile('Users/i1/private/secrets.json'), /Invalid athlete data path/);
 });
 
 test('an expired or missing token requires a new user authorization', async () => {

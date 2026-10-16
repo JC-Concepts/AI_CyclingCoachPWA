@@ -64,6 +64,25 @@
         var log = this.$('chatLog');
         if (log) log.scrollTop = log.scrollHeight;
     };
+    UIManager.prototype.renderChatSession = function (session, syncStatus) {
+        var log = this.$('chatLog');
+        if (!log) return;
+        log.textContent = '';
+        if (session) {
+            (session.messages || []).forEach(function (message) {
+                this.appendMessage(message.role, message.text);
+            }, this);
+        }
+        var title = this.$('activeChatTitle');
+        if (title) title.textContent = session ? session.title : 'Your conversation with Coach';
+        this.setSessionSyncStatus(syncStatus || 'Saved on this device');
+    };
+    UIManager.prototype.setSessionSyncStatus = function (text, state) {
+        var status = this.$('sessionSyncStatus');
+        if (!status) return;
+        status.textContent = text;
+        status.dataset.state = state || 'saved';
+    };
     UIManager.prototype.setChatBusy = function (busy) {
         var input = this.$('chatInput');
         var btn = this.$('chatSend');

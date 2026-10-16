@@ -33,6 +33,46 @@ test('memory get/set and last push hash', () => {
     assert.equal(s.getLastPushHash(), 'abc');
 });
 
+test('memory, pending state, and hashes are isolated by athlete', () => {
+    const s = makeStorage();
+    s.setMemory({ athlete_id: 'athlete-a', messages: [] }, 'athlete-a');
+    s.setPendingFlush(true, 'athlete-a');
+    s.setLastPushHash('hash-a', 'athlete-a');
+    assert.equal(s.getMemory('athlete-a').athlete_id, 'athlete-a');
+    assert.equal(s.getMemory('athlete-b'), null);
+    assert.equal(s.getPendingFlush('athlete-a'), true);
+    assert.equal(s.getPendingFlush('athlete-b'), false);
+    assert.equal(s.getLastPushHash('athlete-a'), 'hash-a');
+    assert.equal(s.getLastPushHash('athlete-b'), '');
+});
+
+test('legacy memory and sync metadata migrate to its matching athlete only', () => {
+    const backend = new MemoryBackend({
+        'coach.memory.v1': JSON.stringify({ athlete_id: 'athlete-a', messages: [] }),
+        'coach.memory.pending': 'true'
+    });
+    const s = new StorageManager(backend);
+    const legacy = s.getMemory('athlete-a');
+    assert.equal(legacy.athlete_id, 'athlete-a');
+    s.setMemory(legacy, 'athlete-a');
+    assert.equal(s.getMemory('athlete-b'), null);
+    assert.equal(s.getPendingFlush('athlete-a'), true);
+    assert.equal(backend.getItem('coach.memory.v1'), null);
+});
+
+test('chat session archive persists the active session and deletion queue', () => {
+    const s = makeStorage();
+    assert.deepEqual(s.getChatSessions('i1'), { activeId: '', sessions: [], deletedIds: [] });
+    const archive = {
+        activeId: 'session-1',
+        sessions: [{ id: 'session-1', messages: [] }],
+        deletedIds: ['session-2']
+    };
+    assert.equal(s.setChatSessions('i1', archive), true);
+    assert.deepEqual(s.getChatSessions('i1'), archive);
+    assert.deepEqual(s.getChatSessions('i2'), { activeId: '', sessions: [], deletedIds: [] });
+});
+
 test('data cache stores and retrieves named files independently', () => {
     const s = makeStorage();
     assert.equal(s.getCachedData('latest.json'), null);

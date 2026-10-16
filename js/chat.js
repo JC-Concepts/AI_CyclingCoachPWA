@@ -38,6 +38,10 @@
             return;
         }
 
+        var session = this.app.ensureActiveChatSession();
+        var priorMessages = (session.messages || []).slice();
+        this.app.recordChatMessage('user', text);
+
         this.busy = true;
         this.ui.setChatBusy(true);
         var el = this.ui.appendMessage('assistant', '');
@@ -65,7 +69,7 @@
             }
             sys += '\n\n' + allSkills;
             var ctxMsg = '[CONTEXT]\n' + ctx.dataMessage + '\n[/CONTEXT]';
-            var history = (mem.messages || []).slice(-40).map(function (m) {
+            var history = priorMessages.slice(-40).map(function (m) {
                 return { role: m.role === 'assistant' ? 'assistant' : 'user', content: m.text };
             });
 
@@ -109,11 +113,11 @@
             }
             if (blocks.dossier) this.ui.showDossierDiff(blocks.dossier);
 
-            this.app.appendMemory('user', text);
-            this.app.appendMemory('assistant', blocks.cleaned || '');
-            this.app.maybeFlushMemory();
+            this.app.recordChatMessage('assistant', blocks.cleaned || '');
+            await this.app.saveChatSessionToDrive(this.app.getActiveChatSession());
         } catch (err) {
             this.ui.updateMessage(el, '**Error:** ' + (err && err.message ? err.message : String(err)));
+            await this.app.saveChatSessionToDrive(this.app.getActiveChatSession());
         } finally {
             this.busy = false;
             this.ui.setChatBusy(false);

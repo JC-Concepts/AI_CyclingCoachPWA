@@ -41,6 +41,7 @@ var CONFIG = {
         settings: 'coach.settings.v1',
         memory: 'coach.memory.v1',
         memoryPending: 'coach.memory.pending',
+        chatSessions: 'coach.chatSessions.v1',
         models: 'coach.models.v1',
         skills: 'coach.skills.v1',
         dataCache: 'coach.cache.v1',

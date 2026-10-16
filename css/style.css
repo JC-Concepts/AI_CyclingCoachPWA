@@ -988,6 +988,19 @@ body {
     min-height: 0;
 }
 
+.chat-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.35rem 0;
+}
+.chat-toolbar-title { display: flex; flex-direction: column; min-width: 0; }
+.chat-toolbar-title strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-toolbar-title span { color: var(--text-secondary); font-size: 0.75rem; }
+.chat-toolbar-title span[data-state="pending"] { color: var(--warning); }
+.chat-toolbar-title span[data-state="error"] { color: var(--error); }
+
 .msg {
     border-radius: 14px;
     padding: 0.65rem 0.9rem;
