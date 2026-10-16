@@ -10,12 +10,15 @@
 
 (function () {
     var CONFIG = window.CONFIG;
+    var FREE_MODEL_REQUEST_LIMIT = 20;
+    var FREE_MODEL_WINDOW_MS = 60 * 1000;
 
     function b64encodeUnicode(str) {
         return btoa(unescape(encodeURIComponent(str)));
     }
     function ApiManager(storage) {
         this.storage = storage || new window.StorageManager();
+        this.freeModelRequestTimes = [];
     }
 
     ApiManager.prototype._settings = function () {
@@ -78,6 +81,26 @@
     };
 
     // -------------------------------------------------------------- OpenRouter
+    ApiManager.prototype._reserveFreeModelRequest = function () {
+        var now = Date.now();
+        var cutoff = now - FREE_MODEL_WINDOW_MS;
+        this.freeModelRequestTimes = this.freeModelRequestTimes.filter(function (time) {
+            return time > cutoff;
+        });
+
+        if (this.freeModelRequestTimes.length >= FREE_MODEL_REQUEST_LIMIT) {
+            var retryInSeconds = Math.ceil(
+                (this.freeModelRequestTimes[0] + FREE_MODEL_WINDOW_MS - now) / 1000
+            );
+            throw new Error(
+                'This tab has reached the free-model limit of 20 requests per rolling minute. ' +
+                'Try again in about ' + retryInSeconds + ' seconds.'
+            );
+        }
+
+        this.freeModelRequestTimes.push(now);
+    };
+
     ApiManager.prototype.listModels = async function () {
         var res = await fetch(CONFIG.openRouterBase + '/models');
         if (!res.ok) throw new Error('Model list failed: ' + res.status);
@@ -102,6 +125,7 @@
         var model = opts.model || s.model;
         if (!s.openrouterKey) throw new Error('OpenRouter API key is required');
         if (!model) throw new Error('No model selected');
+        this._reserveFreeModelRequest();
 
         var res = await fetch(CONFIG.openRouterBase + '/chat/completions', {
             method: 'POST',
