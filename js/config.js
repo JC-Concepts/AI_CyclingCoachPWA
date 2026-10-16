@@ -7,11 +7,6 @@
 var CONFIG = {
     protocolVersion: '11.71',
 
-    // GitHub (overridable per-device via Settings, stored locally)
-    repoOwner: 'JC-Concepts',
-    repoName: 'AI_CyclingCoachPWA',
-    defaultBranch: 'main',
-
     // WorkoutGenerator catalog (upstream, public)
     catalogSource:
         'https://raw.githubusercontent.com/JC-Concepts/WorkoutGenerator/refs/heads/main/workouts.json',
@@ -20,11 +15,14 @@ var CONFIG = {
 
     // Section 11 protocol assets
     section11Raw: 'https://raw.githubusercontent.com/CrankAddict/section-11/main',
+    skillsApiUrl:
+        'https://api.github.com/repos/JC-Concepts/AI_CyclingCoachPWA/contents/Skills?ref=main',
 
     // APIs
     intervalsBase: 'https://intervals.icu/api/v1',
     openRouterBase: 'https://openrouter.ai/api/v1',
-    githubApiBase: 'https://api.github.com',
+    googleClientId: '',
+    pyodideVersion: '0.27.7',
 
     // Timings / limits
     memoryFlushMs: 15 * 60 * 1000,
@@ -44,6 +42,7 @@ var CONFIG = {
         memory: 'coach.memory.v1',
         memoryPending: 'coach.memory.pending',
         models: 'coach.models.v1',
+        skills: 'coach.skills.v1',
         dataCache: 'coach.cache.v1',
         firstLaunch: 'coach.firstLaunch',
         lastPush: 'coach.lastPushHash'

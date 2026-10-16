@@ -42,6 +42,7 @@
         this.ui.setChatBusy(true);
         var el = this.ui.appendMessage('assistant', '');
         try {
+            await this.app.skillsReady;
             var mem = this.app.getMemory();
             var ctx = window.CoachContext.buildContext({
                 settings: settings,
@@ -56,6 +57,13 @@
             });
 
             var sys = window.CoachPrompt.fillSystemPrompt(ctx.systemVars);
+            var allSkills = window.SkillsLoader.formatForPrompt(this.app.skills);
+            if (!allSkills) {
+                allSkills = '=== SKILLS UNAVAILABLE ===\n' +
+                    'No Markdown skill files loaded from Skills/. ' +
+                    (this.app.skillsLoadError || 'The skill directory is empty.');
+            }
+            sys += '\n\n' + allSkills;
             var ctxMsg = '[CONTEXT]\n' + ctx.dataMessage + '\n[/CONTEXT]';
             var history = (mem.messages || []).slice(-40).map(function (m) {
                 return { role: m.role === 'assistant' ? 'assistant' : 'user', content: m.text };
@@ -63,7 +71,7 @@
 
             var dossierText = this.app.getDossierText();
             var interviewMode = text && text.toLowerCase().indexOf('interview') >= 0;
-            var hiddenSkillRequest = 'Load Skills/interval-analysis.md, Skills/workout-agent.md, Skills/health-context.md, Skills/phenotype-agent.md, Skills/workout-catalog.md. These are always active. Load Section 11 protocol (https://raw.githubusercontent.com/CrankAddict/section-11/main/SECTION_11.md) and reference WORKOUT_REFERENCE.md (https://raw.githubusercontent.com/JC-Concepts/WorkoutGenerator/refs/heads/main/WORKOUT_REFERENCE.md) as binding framework sources.';
+            var hiddenSkillRequest = 'All Markdown files discovered in the public Skills/ directory are included in the system context. Apply relevant skills; do not assume the skill set is limited to named examples. Use the Section 11 coaching protocol and workout reference as binding framework sources.';
             if (interviewMode) {
                 hiddenSkillRequest += ' INTERVIEW MODE ACTIVE: athlete is in dossier intake. Read previous dossier below. Ask ONE question card only, then stop. Do not coach. If previous dossier exists, ask what needs updating.';
             }

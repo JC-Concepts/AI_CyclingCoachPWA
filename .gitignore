@@ -1,3 +1,5 @@
 .sync_config.json
 *.log
 .DS_Store
+Users/
+Documents/

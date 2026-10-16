@@ -115,7 +115,7 @@
 
                 <div class="settings-section">
                     <h3>Intervals.icu</h3>
-                    <p class="settings-note">Stored only in this browser (localStorage). Never sent anywhere except the APIs you configure.</p>
+                    <p class="settings-note">Credentials are stored in this browser and sent only to the service you configure. Athlete files are not committed to the app repository.</p>
                     <div class="form-group">
                         <label for="setAthleteId">Athlete ID</label>
                         <input type="text" id="setAthleteId" placeholder="i12345" autocomplete="off">
@@ -145,22 +145,25 @@
                 </div>
 
                 <div class="settings-section">
-                    <h3>GitHub (data store)</h3>
-                    <div class="form-group">
-                        <label for="setGithubToken">Fine-grained PAT</label>
-                        <input type="password" id="setGithubToken" placeholder="github_pat_…" autocomplete="off">
-                        <small>Contents: R/W · Actions: R/W · Metadata: R (this repo only)</small>
-                    </div>
-                    <div class="form-group">
-                        <label>Repo owner / name</label>
-                        <p class="settings-static">JC-Concepts / AI_CyclingCoachPWA</p>
-                    </div>
-                    <button id="runSyncBtn" class="btn btn-secondary">Run data sync</button>
+                    <h3>Google Drive (private data store)</h3>
+                    <p class="settings-note">Athlete files are stored in your visible Google Drive <strong>AI Coach/&lt;AthleteID&gt;</strong> folder. The app requests access only to files and folders it creates or that you explicitly open with it. Google account access controls apply; this app does not add client-side encryption.</p>
+                    <p class="settings-note">Drive connection: <strong id="driveStatus">Not connected</strong></p>
+                    <button id="connectDriveBtn" class="btn btn-secondary">Connect Google Drive</button>
+                    <button id="disconnectDriveBtn" class="btn btn-secondary">Disconnect Google Drive</button>
+                    <small>The app owner must configure a Google OAuth web client ID for the deployed site. Do not enter a client secret here. The client ID is public configuration, not a secret.</small>
                 </div>
 
                 <div class="settings-section">
                     <h3>Data Management</h3>
-                    <button class="btn btn-secondary" onclick="app.loadAthleteData()">Reload athlete data</button>
+                    <button id="runSyncBtn" class="btn btn-secondary">Sync Intervals.icu data on this device</button>
+                    <button id="reloadDataBtn" class="btn btn-secondary">Reload athlete data</button>
+                    <div class="form-group">
+                        <label for="legacyFiles">Import existing private-repository data</label>
+                        <input type="file" id="legacyFiles" accept=".json,.md,application/json,text/markdown" multiple>
+                        <button id="importLegacyBtn" class="btn btn-secondary">Import selected files to Drive</button>
+                        <small>Choose files downloaded by the data owner from the old private repository. Files must match the Athlete ID above.</small>
+                    </div>
+                    <p class="settings-note">Training data is fetched from Intervals.icu by this device and saved to Google Drive. Coaching prompts are sent to your selected OpenRouter model.</p>
                 </div>
 
                 <div class="settings-section">
@@ -281,12 +284,15 @@
 
     <script src="js/config.js"></script>
     <script src="js/storage.js"></script>
+    <script src="js/skills.js"></script>
     <script src="js/settings.js"></script>
     <script src="js/blocks.js"></script>
     <script src="js/catalog.js"></script>
     <script src="js/context.js"></script>
     <script src="js/memory.js"></script>
     <script src="js/prompt.js"></script>
+    <script src="js/google-drive.js"></script>
+    <script src="js/local-sync.js"></script>
     <script src="js/api.js"></script>
     <script src="js/ui.js"></script>
     <script src="js/chat.js"></script>

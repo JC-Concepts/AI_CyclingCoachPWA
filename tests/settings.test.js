@@ -6,14 +6,14 @@ const S = require('../js/settings.js');
 test('validateSettings reports all missing fields on empty settings', () => {
     const r = S.validateSettings({});
     assert.equal(r.ok, false);
-    assert.equal(r.missing.length, 5);
+    assert.equal(r.missing.length, 4);
     assert.deepEqual(r.missing.map(f => f.key).sort(),
-        ['athleteId', 'githubToken', 'intervalsKey', 'model', 'openrouterKey'].sort());
+        ['athleteId', 'intervalsKey', 'model', 'openrouterKey'].sort());
 });
 
 test('validateSettings passes when complete', () => {
     const r = S.validateSettings({
-        athleteId: 'i1', intervalsKey: 'k', openrouterKey: 'o', model: 'm', githubToken: 't'
+        athleteId: 'i1', intervalsKey: 'k', openrouterKey: 'o', model: 'm'
     });
     assert.equal(r.ok, true);
     assert.deepEqual(r.missing, []);
@@ -21,7 +21,7 @@ test('validateSettings passes when complete', () => {
 
 test('validateSettings treats whitespace as blank', () => {
     const r = S.validateSettings({
-        athleteId: 'i1', intervalsKey: '  ', openrouterKey: 'o', model: 'm', githubToken: 't'
+        athleteId: 'i1', intervalsKey: '  ', openrouterKey: 'o', model: 'm'
     });
     assert.equal(r.ok, false);
     assert.deepEqual(r.missing.map(f => f.key), ['intervalsKey']);

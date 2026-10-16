@@ -971,6 +971,13 @@ body {
     overflow: hidden;
 }
 
+#tab-settings.tab-panel.active {
+    display: block;
+    height: auto;
+    max-height: none;
+    overflow: visible;
+}
+
 .chat-log {
     display: flex;
     flex-direction: column;

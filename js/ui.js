@@ -321,8 +321,7 @@
         var s = settings || {};
         var map = {
             setAthleteId: 'athleteId', setIntervalsKey: 'intervalsKey',
-            setOpenrouterKey: 'openrouterKey', setGithubToken: 'githubToken',
-            setModel: 'model', setRepoOwner: 'repoOwner', setRepoName: 'repoName'
+            setOpenrouterKey: 'openrouterKey', setModel: 'model'
         };
         Object.keys(map).forEach((function (id) {
             var el = this.$(id);
@@ -336,11 +335,17 @@
             athleteId: val('setAthleteId'),
             intervalsKey: val('setIntervalsKey'),
             openrouterKey: val('setOpenrouterKey'),
-            githubToken: val('setGithubToken'),
-            model: val('setModel'),
-            repoOwner: val('setRepoOwner'),
-            repoName: val('setRepoName')
+            model: val('setModel')
         };
+    };
+
+    UIManager.prototype.setDriveStatus = function (connected) {
+        var status = this.$('driveStatus');
+        if (status) status.textContent = connected ? 'Connected for this session' : 'Not connected';
+        var connect = this.$('connectDriveBtn');
+        var disconnect = this.$('disconnectDriveBtn');
+        if (connect) connect.disabled = !!connected;
+        if (disconnect) disconnect.disabled = !connected;
     };
 
     UIManager.prototype.fillModelSelect = function (models, current) {

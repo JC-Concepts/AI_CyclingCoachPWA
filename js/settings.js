@@ -9,8 +9,7 @@
         { key: 'athleteId', label: 'Intervals.icu Athlete ID', section: 'Intervals.icu' },
         { key: 'intervalsKey', label: 'Intervals.icu API Key', section: 'Intervals.icu' },
         { key: 'openrouterKey', label: 'OpenRouter API Key', section: 'OpenRouter' },
-        { key: 'model', label: 'OpenRouter Model', section: 'OpenRouter' },
-        { key: 'githubToken', label: 'GitHub Token (PAT)', section: 'GitHub' }
+        { key: 'model', label: 'OpenRouter Model', section: 'OpenRouter' }
     ];
 
     function isBlank(v) {

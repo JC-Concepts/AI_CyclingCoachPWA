@@ -1,5 +1,5 @@
 /* AI Cycling Coach - service worker (relative paths only) */
-const CACHE_NAME = 'ai-cycling-coach-v1';
+const CACHE_NAME = 'ai-cycling-coach-v3';
 const ASSETS_TO_CACHE = [
     './',
     './index.html',
@@ -7,16 +7,21 @@ const ASSETS_TO_CACHE = [
     './css/style.css',
     './js/config.js',
     './js/storage.js',
+    './js/skills.js',
     './js/settings.js',
     './js/blocks.js',
     './js/catalog.js',
     './js/context.js',
     './js/memory.js',
     './js/prompt.js',
+    './js/google-drive.js',
+    './js/local-sync.js',
+    './js/sync-worker.js',
     './js/api.js',
     './js/ui.js',
     './js/chat.js',
     './js/app.js',
+    './sync.py',
     './assets/icons/icon-72.png',
     './assets/icons/icon-96.png',
     './assets/icons/icon-128.png',
@@ -48,7 +53,7 @@ self.addEventListener('fetch', (event) => {
     if (req.method !== 'GET') return;
 
     const url = new URL(req.url);
-    // Only cache same-origin app shell; never cache API calls (GitHub, Intervals, OpenRouter).
+    // Cache only same-origin app assets; never cache private API requests.
     if (url.origin !== self.location.origin) return;
 
     event.respondWith(

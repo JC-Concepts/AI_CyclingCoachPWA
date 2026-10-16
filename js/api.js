@@ -1,5 +1,5 @@
 /**
- * api.js - Network layer: GitHub (Contents + Actions), Intervals.icu, OpenRouter.
+ * api.js - Network layer: Intervals.icu and OpenRouter.
  * Secrets are read from StorageManager settings and never logged.
  *
  * The Intervals upload path reuses the proven WorkoutGenerator recipe
@@ -14,10 +14,6 @@
     function b64encodeUnicode(str) {
         return btoa(unescape(encodeURIComponent(str)));
     }
-    function b64decodeUnicode(b64) {
-        return decodeURIComponent(escape(atob(String(b64).replace(/\n/g, ''))));
-    }
-
     function ApiManager(storage) {
         this.storage = storage || new window.StorageManager();
     }
@@ -25,124 +21,6 @@
     ApiManager.prototype._settings = function () {
         return this.storage.getSettings();
     };
-    ApiManager.prototype._repo = function () {
-        var s = this._settings();
-        return {
-            owner: s.repoOwner || CONFIG.repoOwner,
-            name: s.repoName || CONFIG.repoName,
-            branch: s.branch || CONFIG.defaultBranch
-        };
-    };
-
-    // ------------------------------------------------------------------ GitHub
-    ApiManager.prototype._ghHeaders = function () {
-        var s = this._settings();
-        return {
-            'Authorization': 'Bearer ' + (s.githubToken || ''),
-            'Accept': 'application/vnd.github+json',
-            'X-GitHub-Api-Version': '2022-11-28'
-        };
-    };
-
-    ApiManager.prototype.ghValidateRepo = async function () {
-        var r = this._repo();
-        var res = await fetch(CONFIG.githubApiBase + '/repos/' + r.owner + '/' + r.name, {
-            headers: this._ghHeaders()
-        });
-        if (!res.ok) throw new Error('GitHub repo check failed: ' + res.status);
-        return res.json();
-    };
-
-    ApiManager.prototype.ghGetFile = async function (path) {
-        var r = this._repo();
-        var url = CONFIG.githubApiBase + '/repos/' + r.owner + '/' + r.name +
-            '/contents/' + encodeURI(path) + '?ref=' + r.branch;
-        var res = await fetch(url, { headers: this._ghHeaders() });
-        if (res.status === 404) return null;
-        if (!res.ok) throw new Error('GitHub read failed: ' + res.status);
-        var data = await res.json();
-        var text = data.content ? b64decodeUnicode(data.content) : '';
-        return { path: path, sha: data.sha, text: text };
-    };
-
-    ApiManager.prototype.ghGetJSON = async function (path) {
-        var f = await this.ghGetFile(path);
-        if (!f || !f.text) return null;
-        try { return JSON.parse(f.text); } catch (e) { return null; }
-    };
-
-    ApiManager.prototype.ghPutFile = async function (path, text, message, sha) {
-        var r = this._repo();
-        var url = CONFIG.githubApiBase + '/repos/' + r.owner + '/' + r.name + '/contents/' + encodeURI(path);
-        var body = {
-            message: message,
-            content: b64encodeUnicode(text),
-            branch: r.branch
-        };
-        if (sha) body.sha = sha;
-        var res = await fetch(url, {
-            method: 'PUT',
-            headers: this._ghHeaders(),
-            body: JSON.stringify(body)
-        });
-        if (res.status === 409 || res.status === 422) {
-            var err = new Error('GitHub write conflict');
-            err.code = 409;
-            throw err;
-        }
-        if (!res.ok) throw new Error('GitHub write failed: ' + res.status + ' ' + (await res.text()));
-        return res.json();
-    };
-
-    /**
-     * Create-or-update a file (fetch current sha first).
-     */
-    ApiManager.prototype.ghWriteFile = async function (path, text, message) {
-        var existing = await this.ghGetFile(path);
-        return this.ghPutFile(path, text, message, existing ? existing.sha : undefined);
-    };
-
-    ApiManager.prototype.ghDispatchWorkflow = async function (workflowFile, inputs) {
-        var r = this._repo();
-        var url = CONFIG.githubApiBase + '/repos/' + r.owner + '/' + r.name +
-            '/actions/workflows/' + workflowFile + '/dispatches';
-        var res = await fetch(url, {
-            method: 'POST',
-            headers: this._ghHeaders(),
-            body: JSON.stringify({ ref: r.branch, inputs: inputs || {} })
-        });
-        if (res.status !== 204 && !res.ok) {
-            throw new Error('Workflow dispatch failed: ' + res.status + ' ' + (await res.text()));
-        }
-        return true;
-    };
-
-    ApiManager.prototype.ghLatestRun = async function (workflowFile) {
-        var r = this._repo();
-        var url = CONFIG.githubApiBase + '/repos/' + r.owner + '/' + r.name +
-            '/actions/workflows/' + workflowFile + '/runs?per_page=1';
-        var res = await fetch(url, { headers: this._ghHeaders() });
-        if (!res.ok) throw new Error('Run lookup failed: ' + res.status);
-        var data = await res.json();
-        return (data.workflow_runs && data.workflow_runs[0]) || null;
-    };
-
-    /**
-     * Poll the newest run of a workflow until it leaves "in_progress"/"queued".
-     */
-    ApiManager.prototype.ghWaitForRun = async function (workflowFile, opts) {
-        opts = opts || {};
-        var timeout = opts.timeoutMs || CONFIG.syncPollTimeoutMs;
-        var interval = opts.intervalMs || CONFIG.syncPollIntervalMs;
-        var started = Date.now();
-        while (Date.now() - started < timeout) {
-            var run = await this.ghLatestRun(workflowFile);
-            if (run && run.status === 'completed') return run;
-            await new Promise(function (res) { setTimeout(res, interval); });
-        }
-        return null;
-    };
-
     // -------------------------------------------------------------- Intervals
     ApiManager.prototype.intervalsValidate = async function (athleteId, key) {
         var res = await fetch(CONFIG.intervalsBase + '/athlete/' + athleteId, {
@@ -275,5 +153,4 @@
 
     window.ApiManager = ApiManager;
     window.b64encodeUnicode = b64encodeUnicode;
-    window.b64decodeUnicode = b64decodeUnicode;
 })();

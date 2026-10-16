@@ -18,10 +18,10 @@ Generation rules (from `workout_agent.py`):
 - Verify against `WORKOUT_REFERENCE.md` template before prescribing; identify template ID
 - If no template match: say so — do not improvise structure
 - Format segments: duration (seconds/minutes), power (% FTP or zone), zone, type (Warmup, SteadyState, Interval, Cooldown)
-- Include total duration, estimated TSS, target zone, and description ready for `push-workout.yml`
+- Include total duration, estimated TSS, target zone, and a description suitable for the app's browser-to-Intervals.icu upload flow
 - Use cached Intervals.icu data (from `latest.json`) to avoid redundant calculations
 
-Output format (ready for push-workout.yml):
+Output format (ready for the PWA workout preview):
 - name, date, type (Ride/Run), description (structured with segments), duration_minutes, tss, target (POWER/HR)
 
 Reference: `workout_agent.py` (AI_Coach/skills/) — adaptive based on load/feedback; uses cached Intervals.icu data.
