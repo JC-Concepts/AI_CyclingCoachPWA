@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#0F172A">
+    <meta name="description" content="AI Cycling Coach - Section 11 coaching, workout catalog, Intervals.icu sync">
+    <title>AI Cycling Coach</title>
+    <link rel="manifest" href="pwa-manifest.json">
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="icon" type="image/png" href="assets/icons/icon-192.png">
+    <link rel="apple-touch-icon" href="assets/icons/icon-192.png">
+</head>
+<body>
+    <div class="app-container">
+        <header class="header">
+            <div class="header-content">
+                <div class="logo">
+                    <img src="assets/icons/icon-96.png" alt="AI Cycling Coach" class="logo-img">
+                    <h1>AI Cycling Coach</h1>
+                </div>
+                <div class="header-actions">
+                    <button class="install-btn-header" id="installBtn" title="Install App">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="7 10 12 15 17 10"></polyline>
+                            <line x1="12" y1="15" x2="12" y2="3"></line>
+                        </svg>
+                        Install App
+                    </button>
+                    <button class="donate-btn-header" onclick="document.getElementById('donateModal').style.display='flex'">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path>
+                        </svg>
+                        Donate
+                    </button>
+                </div>
+            </div>
+            <nav class="tabs">
+                <button class="tab active" data-tab="coach">Coach</button>
+                <button class="tab" data-tab="workouts">Workouts</button>
+                <button class="tab" data-tab="settings">Settings</button>
+            </nav>
+        </header>
+
+        <!-- COACH TAB -->
+        <section id="tab-coach" class="tab-panel active">
+            <div id="dashboard" class="dashboard"></div>
+            <div id="chatLog" class="chat-log"></div>
+            <div id="cardHost" class="card-host"></div>
+            <div class="chat-input-bar">
+                <textarea id="chatInput" rows="2" placeholder="Ask your coach…"></textarea>
+                <button id="chatSend" class="btn btn-primary">
+                    <span id="chatSpinner" class="spinner-sm" style="display:none;"></span>
+                    Send
+                </button>
+            </div>
+            <div class="coach-actions">
+                <button id="startInterviewBtn" class="btn btn-secondary">Start dossier interview</button>
+            </div>
+        </section>
+
+        <!-- WORKOUTS TAB -->
+        <section id="tab-workouts" class="tab-panel">
+            <div class="search-section">
+                <div class="search-container">
+                    <div class="filters-grid">
+                        <div class="filter-group">
+                            <label for="duration">Workout Duration</label>
+                            <select id="duration" class="select-input">
+                                <option value="">All Durations</option>
+                                <option value="less_30">Less than 30 min</option>
+                                <option value="30_45">30-45 minutes</option>
+                                <option value="45_60">45-60 minutes</option>
+                                <option value="60_90">60-90 minutes</option>
+                                <option value="greater_90">Greater than 90 min</option>
+                            </select>
+                        </div>
+                        <div class="filter-group">
+                            <label for="zone">Workout Type (Zone)</label>
+                            <select id="zone" class="select-input">
+                                <option value="">All Types</option>
+                            </select>
+                        </div>
+                        <div class="filter-group">
+                            <label>Stress Level (TSS)</label>
+                            <div class="tss-range">
+                                <input type="range" id="tssMin" class="range-input" min="0" max="500" value="0">
+                                <input type="range" id="tssMax" class="range-input" min="0" max="500" value="500">
+                                <span id="tssLabel">TSS: 0 - 500</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="button-group">
+                        <button id="applyFiltersBtn" class="btn btn-primary">Search</button>
+                        <button id="resetFiltersBtn" class="btn btn-secondary">Reset</button>
+                    </div>
+                    <div id="statsDisplay" class="stats-display">
+                        <p id="resultCount">Loading workouts…</p>
+                    </div>
+                </div>
+            </div>
+            <div class="results-section">
+                <div id="workoutCards" class="workouts-grid"></div>
+            </div>
+            <section id="emptyState" class="empty-state" style="display:none;">
+                <div class="empty-state-content"><h3>No Workouts Found</h3><p>Try adjusting your filters.</p></div>
+            </section>
+        </section>
+
+        <!-- SETTINGS TAB -->
+        <section id="tab-settings" class="tab-panel">
+            <div class="settings-content">
+                <h2>Settings</h2>
+
+                <div class="settings-section">
+                    <h3>Intervals.icu</h3>
+                    <p class="settings-note">Stored only in this browser (localStorage). Never sent anywhere except the APIs you configure.</p>
+                    <div class="form-group">
+                        <label for="setAthleteId">Athlete ID</label>
+                        <input type="text" id="setAthleteId" placeholder="i12345" autocomplete="off">
+                        <small>From your profile URL: intervals.icu/athlete/[ID]</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="setIntervalsKey">API Key</label>
+                        <input type="password" id="setIntervalsKey" placeholder="Intervals.icu API key" autocomplete="off">
+                    </div>
+                </div>
+
+                <div class="settings-section">
+                    <h3>OpenRouter</h3>
+                    <div class="form-group">
+                        <label for="setOpenrouterKey">API Key</label>
+                        <input type="password" id="setOpenrouterKey" placeholder="sk-or-…" autocomplete="off">
+                    </div>
+                    <div class="form-group">
+                        <label for="modelSelect">Model</label>
+                        <div class="row">
+                            <select id="modelSelect" class="select-input"></select>
+                            <button id="loadModelsBtn" class="btn btn-secondary">Load free models</button>
+                        </div>
+                        <input type="hidden" id="setModel">
+                        <small>Model id is saved when you select one.</small>
+                    </div>
+                </div>
+
+                <div class="settings-section">
+                    <h3>GitHub (data store)</h3>
+                    <div class="form-group">
+                        <label for="setGithubToken">Fine-grained PAT</label>
+                        <input type="password" id="setGithubToken" placeholder="github_pat_…" autocomplete="off">
+                        <small>Contents: R/W · Actions: R/W · Metadata: R (this repo only)</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="setRepoOwner">Repo owner</label>
+                        <input type="text" id="setRepoOwner" placeholder="JC-Concepts" autocomplete="off">
+                    </div>
+                    <div class="form-group">
+                        <label for="setRepoName">Repo name</label>
+                        <input type="text" id="setRepoName" placeholder="AI_CyclingCoachPWA" autocomplete="off">
+                    </div>
+                    <button id="runSyncBtn" class="btn btn-secondary">Run data sync</button>
+                </div>
+
+                <div class="settings-section">
+                    <h3>Data Management</h3>
+                    <button class="btn btn-secondary" onclick="app.loadAthleteData()">Reload athlete data</button>
+                </div>
+
+                <div class="settings-section">
+                    <h3>About</h3>
+                    <p class="version-info">AI Cycling Coach · Section 11 v11.71</p>
+                </div>
+
+                <button id="saveSettingsBtn" class="btn btn-primary">Save Settings</button>
+
+                <div class="settings-section donation-section">
+                    <h3>Support This Project</h3>
+                    <p>Like this app? You can buy me a gel, coffee, or inner tube!</p>
+                    <form action="https://www.paypal.com/donate" method="post" target="_top">
+                        <input type="hidden" name="hosted_button_id" value="RE2GQDK8CD2WW" />
+                        <input type="image" src="https://www.paypalobjects.com/en_US/i/btn/btn_donateCC_LG.gif" border="0" name="submit" title="PayPal - The safer, easier way to pay online!" alt="Donate with PayPal button" />
+                        <img alt="" border="0" src="https://www.paypal.com/en_CA/i/scr/pixel.gif" width="1" height="1" />
+                    </form>
+                </div>
+
+                <div class="settings-section">
+                    <h3>Install</h3>
+                    <button class="btn btn-secondary" onclick="document.getElementById('pwaInstallModal').style.display='flex'">Install App</button>
+                </div>
+            </div>
+        </section>
+
+        <div id="loadingOverlay" class="loading-overlay" style="display:none;">
+            <div class="spinner"></div>
+            <p>Loading…</p>
+        </div>
+    </div>
+
+    <!-- Workout Detail Modal (chart preserved) -->
+    <div id="workoutModal" class="modal" style="display:none;">
+        <div class="modal-content">
+            <button class="modal-close" onclick="app.ui.closeModal('workoutModal')">&times;</button>
+            <div class="workout-detail">
+                <div class="detail-header">
+                    <div class="detail-info">
+                        <h2 id="detailName"></h2>
+                        <p id="detailDescription" class="detail-description"></p>
+                        <div class="detail-meta">
+                            <span class="meta-item"><strong>Author:</strong> <span id="detailAuthor"></span></span>
+                            <span class="meta-item"><strong>Category:</strong> <span id="detailCategory"></span></span>
+                        </div>
+                        <div id="intensityContainer"></div>
+                    </div>
+                    <div class="detail-stats">
+                        <div class="stat-box"><div class="stat-value"><span id="detailDuration"></span> min</div><div class="stat-label">Duration</div></div>
+                        <div class="stat-box"><div class="stat-value"><span id="detailZone"></span></div><div class="stat-label">Primary Zone</div></div>
+                        <div class="stat-box"><div class="stat-value"><span id="detailTSS"></span></div><div class="stat-label">Stress Score</div></div>
+                        <div class="stat-box"><div class="stat-value"><span id="detailAvgPower"></span>%</div><div class="stat-label">Avg Power</div></div>
+                    </div>
+                </div>
+                <div class="detail-actions">
+                    <button id="downloadWorkoutBtn" class="action-btn action-download">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                        Download .ZWO
+                    </button>
+                    <button id="pushSelectedBtn" class="action-btn action-upload">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                        Push to Intervals.icu
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Donate Modal (verbatim) -->
+    <div id="donateModal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <button class="modal-close" onclick="document.getElementById('donateModal').style.display='none'">&times;</button>
+            <div class="donate-modal-content">
+                <h2>Support This Project</h2>
+                <p>Like this app? You can buy me a gel, coffee, or inner tube!</p>
+                <form action="https://www.paypal.com/donate" method="post" target="_top">
+                    <input type="hidden" name="hosted_button_id" value="RE2GQDK8CD2WW" />
+                    <input type="image" src="https://www.paypalobjects.com/en_US/i/btn/btn_donateCC_LG.gif" border="0" name="submit" title="PayPal - The safer, easier way to pay online!" alt="Donate with PayPal button" style="max-width: 100%;" />
+                    <img alt="" border="0" src="https://www.paypal.com/en_CA/i/scr/pixel.gif" width="1" height="1" />
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- PWA Install Instructions Modal (verbatim) -->
+    <div id="pwaInstallModal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <button class="modal-close" onclick="app.dismissPwa()">&times;</button>
+            <div class="pwa-install-content">
+                <h2>Install This App</h2>
+                <p>Add this app to your device for the best experience:</p>
+                <div class="pwa-instructions">
+                    <div class="pwa-instruction">
+                        <div class="pwa-icon android-icon">
+                            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M17.6 9.48l1.84-3.18c.16-.31.04-.69-.26-.85c-.29-.15-.65-.06-.83.22l-1.88 3.24c-2.86-1.21-6.08-1.21-8.94 0L5.65 5.67c-.19-.29-.58-.38-.87-.2c-.31.16-.44.54-.28.86l1.84 3.18C2.67 13.75 2.5 18.87 6.3 21.94c.11.09.24.14.38.14c.19 0 .37-.09.49-.25l1.2-1.73c1.14.38 2.35.57 3.61.57c1.26 0 2.47-.19 3.61-.57l1.2 1.73c.12.16.3.25.49.25c.14 0 .27-.05.38-.14c3.8-3.07 3.63-8.19-.14-11.46zM12 18c-2.21 0-4-1.79-4-4s1.79-4 4-4s4 1.79 4 4s-1.79 4-4 4z"/></svg>
+                        </div>
+                        <div class="pwa-text"><strong>Android (Chrome)</strong><span>Tap the menu (three dots) → "Add to Home Screen"</span></div>
+                    </div>
+                    <div class="pwa-instruction">
+                        <div class="pwa-icon apple-icon">
+                            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
+                        </div>
+                        <div class="pwa-text"><strong>iOS (Safari)</strong><span>Tap the share button → "Add to Home Screen"</span></div>
+                    </div>
+                    <div class="pwa-instruction">
+                        <div class="pwa-icon desktop-icon">
+                            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 6h16v10H4V6zm16 12H4c-1.1 0-2 .9-2 2h16c0-1.1-.9-2-2-2z"/></svg>
+                        </div>
+                        <div class="pwa-text"><strong>Desktop (Chrome/Edge)</strong><span>Look for the install icon in the address bar</span></div>
+                    </div>
+                </div>
+                <button class="btn btn-primary" onclick="app.dismissPwa()">Got it!</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast" class="toast" style="display: none;"></div>
+
+    <script src="js/config.js"></script>
+    <script src="js/storage.js"></script>
+    <script src="js/settings.js"></script>
+    <script src="js/blocks.js"></script>
+    <script src="js/catalog.js"></script>
+    <script src="js/context.js"></script>
+    <script src="js/memory.js"></script>
+    <script src="js/prompt.js"></script>
+    <script src="js/api.js"></script>
+    <script src="js/ui.js"></script>
+    <script src="js/chat.js"></script>
+    <script src="js/app.js"></script>
+    <script>
+        (function () {
+            var sel = document.getElementById('modelSelect');
+            if (sel) sel.addEventListener('change', function () {
+                document.getElementById('setModel').value = sel.value;
+                if (window.app) {
+                    var s = window.app.storage.getSettings();
+                    s.model = sel.value;
+                    window.app.storage.saveSettings(s);
+                }
+            });
+            if ('serviceWorker' in navigator) {
+                navigator.serviceWorker.register('sw.js').catch(function () {});
+            }
+        })();
+    </script>
+</body>
+</html>

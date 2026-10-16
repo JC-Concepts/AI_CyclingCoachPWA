@@ -1,0 +1,121 @@
+name: Sync Intervals.icu Data
+
+# Dispatch-only multi-athlete sync (ARCHITECTURE §9.3).
+# Credentials arrive as workflow_dispatch inputs supplied by the PWA from
+# localStorage, and are masked in the very first step. Nothing is stored in the repo.
+
+on:
+  # For the coach's own data you may re-enable a cron guarded by repo secrets.
+  # Default OFF: multi-athlete sync is dispatch-only (no keys in the repo).
+  # schedule:
+  #   - cron: '7,37 * * * *'
+  workflow_dispatch:
+    inputs:
+      athlete_id:
+        description: 'Intervals.icu Athlete ID (e.g. i12345)'
+        required: true
+        type: string
+      intervals_key:
+        description: 'Intervals.icu API key'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-${{ inputs.athlete_id }}
+  cancel-in-progress: false
+  queue: max
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Mask credentials
+        env:
+          ATHLETE_ID: ${{ inputs.athlete_id }}
+          INTERVALS_KEY: ${{ inputs.intervals_key }}
+        run: |
+          echo "::add-mask::${ATHLETE_ID}"
+          echo "::add-mask::${INTERVALS_KEY}"
+          if [ -z "$ATHLETE_ID" ]; then echo "ERROR: athlete_id input required"; exit 1; fi
+          if [ -z "$INTERVALS_KEY" ]; then echo "ERROR: intervals_key input required"; exit 1; fi
+
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+
+      - name: Setup Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Verify sync.py exists
+        run: |
+          if [ ! -f sync.py ]; then
+            echo "ERROR: sync.py not found at repo root."
+            exit 1
+          fi
+          echo "sync.py found"
+
+      - name: Run sync
+        env:
+          ATHLETE_ID: ${{ inputs.athlete_id }}
+          INTERVALS_KEY: ${{ inputs.intervals_key }}
+          WEEK_START: 'mon'
+          ZONE_PREFERENCE: ''
+        run: |
+          python sync.py \
+            --athlete-id "$ATHLETE_ID" \
+            --intervals-key "$INTERVALS_KEY" \
+            --days 7 \
+            --output latest.json || exit 1
+
+      - name: Move + rename data into per-athlete folder
+        env:
+          ATHLETE_ID: ${{ inputs.athlete_id }}
+        run: |
+          mkdir -p "Users/$ATHLETE_ID"
+          for f in latest history intervals routes saved_workouts ftp_history; do
+            if [ -f "$f.json" ]; then
+              mv "$f.json" "Users/$ATHLETE_ID/${ATHLETE_ID}_$f.json"
+              echo "moved $f.json"
+            else
+              echo "WARNING: $f.json was not generated"
+            fi
+          done
+
+      - name: Verify generated data
+        env:
+          ATHLETE_ID: ${{ inputs.athlete_id }}
+        run: |
+          missing=0
+          for f in latest history intervals routes saved_workouts ftp_history; do
+            if [ -f "Users/$ATHLETE_ID/${ATHLETE_ID}_$f.json" ]; then
+              echo "OK: ${ATHLETE_ID}_$f.json"
+            else
+              echo "MISSING: ${ATHLETE_ID}_$f.json"
+              missing=1
+            fi
+          done
+          if [ "$missing" -eq 1 ]; then echo "ERROR: one or more data files missing"; exit 1; fi
+
+      - name: Commit updated data
+        env:
+          ATHLETE_ID: ${{ inputs.athlete_id }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add "Users/$ATHLETE_ID"
+          if git diff --cached --quiet; then
+            echo "No changes"
+          else
+            git commit -m "sync $ATHLETE_ID [skip ci]"
+            git push
+          fi

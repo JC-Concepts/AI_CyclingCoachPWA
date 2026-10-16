@@ -1,0 +1,9 @@
+{
+  "name": "ai-cycling-coach-pwa",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Section 11 AI cycling coach PWA - no build step, vanilla JS",
+  "scripts": {
+    "test": "node --test \"tests/*.test.js\""
+  }
+}
