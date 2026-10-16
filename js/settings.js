@@ -5,12 +5,27 @@
 'use strict';
 
 (function () {
-    var FIELDS = [
+    var BASE_FIELDS = [
         { key: 'athleteId', label: 'Intervals.icu Athlete ID', section: 'Intervals.icu' },
-        { key: 'intervalsKey', label: 'Intervals.icu API Key', section: 'Intervals.icu' },
-        { key: 'openrouterKey', label: 'OpenRouter API Key', section: 'OpenRouter' },
-        { key: 'model', label: 'OpenRouter Model', section: 'OpenRouter' }
+        { key: 'intervalsKey', label: 'Intervals.icu API Key', section: 'Intervals.icu' }
     ];
+    var PROVIDER_FIELDS = {
+        openrouter: [
+            { key: 'openrouterKey', label: 'OpenRouter API Key', section: 'OpenRouter' },
+            { key: 'model', label: 'OpenRouter Model', section: 'OpenRouter' }
+        ],
+        gemini: [
+            { key: 'geminiKey', label: 'Gemini API Key', section: 'Google Gemini' },
+            { key: 'geminiModel', label: 'Gemini Model ID', section: 'Google Gemini' }
+        ]
+    };
+
+    function requiredFields(settings) {
+        var provider = settings && settings.provider || 'openrouter';
+        return BASE_FIELDS.concat(PROVIDER_FIELDS[provider] || [
+            { key: 'provider', label: 'AI Provider', section: 'AI Provider' }
+        ]);
+    }
 
     function isBlank(v) {
         return v === undefined || v === null || String(v).trim() === '';
@@ -23,8 +38,9 @@
     function validateSettings(settings) {
         var s = settings || {};
         var missing = [];
-        for (var i = 0; i < FIELDS.length; i++) {
-            if (isBlank(s[FIELDS[i].key])) missing.push(FIELDS[i]);
+        var fields = requiredFields(s);
+        for (var i = 0; i < fields.length; i++) {
+            if (fields[i].key === 'provider' || isBlank(s[fields[i].key])) missing.push(fields[i]);
         }
         return { ok: missing.length === 0, missing: missing };
     }
@@ -45,11 +61,13 @@
 
     function presentFields(settings) {
         var s = settings || {};
-        return FIELDS.filter(function (f) { return !isBlank(s[f.key]); });
+        return requiredFields(s).filter(function (f) {
+            return f.key !== 'provider' && !isBlank(s[f.key]);
+        });
     }
 
     var api = {
-        FIELDS: FIELDS,
+        FIELDS: BASE_FIELDS,
         validateSettings: validateSettings,
         formatMissingMessage: formatMissingMessage,
         presentFields: presentFields,

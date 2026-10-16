@@ -1,5 +1,5 @@
 /* AI Cycling Coach - service worker (relative paths only) */
-const CACHE_NAME = 'ai-cycling-coach-v9';
+const CACHE_NAME = 'ai-cycling-coach-v18';
 const ASSETS_TO_CACHE = [
     './',
     './index.html',

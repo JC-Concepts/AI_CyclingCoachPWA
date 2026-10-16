@@ -132,19 +132,46 @@
                 </div>
 
                 <div class="settings-section">
-                    <h3>OpenRouter</h3>
+                    <h3>AI Provider</h3>
                     <div class="form-group">
-                        <label for="setOpenrouterKey">API Key</label>
-                        <input type="password" id="setOpenrouterKey" placeholder="sk-or-…" autocomplete="off">
+                        <label for="aiProvider">Provider</label>
+                        <select id="aiProvider" class="select-input">
+                            <option value="openrouter">OpenRouter</option>
+                            <option value="gemini">Google Gemini</option>
+                        </select>
+                        <small>Choose which service receives your coaching prompts.</small>
                     </div>
-                    <div class="form-group">
-                        <label for="modelSelect">Model</label>
-                        <div class="row">
-                            <select id="modelSelect" class="select-input"></select>
-                            <button id="loadModelsBtn" class="btn btn-secondary">Load free models</button>
+                    <div id="openrouterProviderSettings">
+                        <div class="form-group">
+                            <label for="setOpenrouterKey">OpenRouter API Key</label>
+                            <input type="password" id="setOpenrouterKey" placeholder="sk-or-…" autocomplete="off">
                         </div>
-                        <input type="hidden" id="setModel">
-                        <small>Model id is saved when you select one.</small>
+                        <div class="form-group">
+                            <label for="modelSelect">OpenRouter Model</label>
+                            <div class="row">
+                                <select id="modelSelect" class="select-input"></select>
+                                <button id="loadModelsBtn" class="btn btn-secondary">Load free models</button>
+                            </div>
+                            <input type="hidden" id="setModel">
+                            <small>Model id is saved when you select one.</small>
+                        </div>
+                    </div>
+                    <div id="geminiProviderSettings" hidden>
+                        <div class="form-group">
+                            <label for="setGeminiKey">Gemini API Key</label>
+                            <input type="password" id="setGeminiKey" placeholder="Google AI Studio API key" autocomplete="off">
+                            <small>Get an API key from <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer">Google AI Studio</a>. It is stored in this browser and sent directly to Google.</small>
+                        </div>
+                        <div class="form-group">
+                            <label for="setGeminiModel">Gemini Model ID</label>
+                            <div class="row gemini-model-controls">
+                                <select id="setGeminiModel" class="select-input">
+                                    <option value="">Load models for your API key</option>
+                                </select>
+                                <button id="loadGeminiModelsBtn" class="btn btn-secondary" type="button">Load Gemini models</button>
+                            </div>
+                            <small>Models listed here support text generation with this API key. Google does not report free-tier eligibility in the model list; check your Google AI Studio billing and limits.</small>
+                        </div>
                     </div>
                 </div>
 
@@ -167,7 +194,7 @@
                         <button id="importLegacyBtn" class="btn btn-secondary">Import selected files to Drive</button>
                         <small>Choose files downloaded by the data owner from the old private repository. Files must match the Athlete ID above.</small>
                     </div>
-                    <p class="settings-note">Training data is fetched from Intervals.icu by this device and saved to Google Drive. Coaching prompts are sent to your selected OpenRouter model.</p>
+                    <p class="settings-note">Training data is fetched from Intervals.icu by this device and saved to Google Drive. Coaching prompts are sent to the selected AI provider.</p>
                 </div>
 
                 <div class="settings-section">
@@ -215,6 +242,7 @@
                     <div class="detail-info">
                         <h2 id="detailName"></h2>
                         <p id="detailDescription" class="detail-description"></p>
+                        <p id="detailSchedule" class="detail-schedule" hidden></p>
                         <div class="detail-meta">
                             <span class="meta-item"><strong>Author:</strong> <span id="detailAuthor"></span></span>
                             <span class="meta-item"><strong>Category:</strong> <span id="detailCategory"></span></span>
@@ -235,7 +263,7 @@
                     </button>
                     <button id="pushSelectedBtn" class="action-btn action-upload">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
-                        Push to Intervals.icu
+                        Upload to Calendar
                     </button>
                 </div>
             </div>

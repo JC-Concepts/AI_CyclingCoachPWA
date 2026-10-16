@@ -67,6 +67,42 @@ test('filterCatalog respects limit', () => {
     assert.equal(C.filterCatalog(rows, { limit: 2 }).length, 2);
 });
 
+test('findCandidates relaxes generated TSS filters when an exact match is unavailable', () => {
+    const rows = C.parseCatalog(compact());
+    const result = C.findCandidates(rows, {
+        zones: [2],
+        duration_min: 60,
+        duration_max: 90,
+        tss_min: 100,
+        tss_max: 120,
+        limit: 10
+    });
+
+    assert.deepEqual(result.relaxed, ['TSS bounds']);
+    assert.equal(result.catalogAvailable, true);
+    assert.ok(result.rows.length > 0);
+    assert.ok(result.rows.every(row =>
+        row.primary_zone === 2 &&
+        row.duration_seconds >= 60 * 60 &&
+        row.duration_seconds <= 90 * 60
+    ));
+});
+
+test('findCandidates bounds suggestions to the default catalog limit', () => {
+    const rows = C.parseCatalog(compact());
+    const result = C.findCandidates(rows, { limit: 0 });
+
+    assert.equal(result.relaxed.length, 0);
+    assert.equal(result.rows.length, 4);
+});
+
+test('findCandidates distinguishes an unavailable catalog from no matches', () => {
+    const result = C.findCandidates([], {});
+
+    assert.deepEqual(result.rows, []);
+    assert.equal(result.catalogAvailable, false);
+});
+
 test('toCandidate and formatCandidates produce bounded rows', () => {
     const rows = C.parseCatalog(compact());
     const cand = C.toCandidate(rows[0]);

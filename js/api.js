@@ -1,5 +1,5 @@
 /**
- * api.js - Network layer: Intervals.icu and OpenRouter.
+ * api.js - Network layer: Intervals.icu, OpenRouter, and Google Gemini.
  * Secrets are read from StorageManager settings and never logged.
  *
  * The Intervals upload path reuses the proven WorkoutGenerator recipe
@@ -65,9 +65,16 @@
     };
 
     ApiManager.prototype.fetchCatalogWorkout = async function (file) {
-        var clean = String(file || '').split('/').pop().replace(/^workouts\//, '');
-        var res = await fetch(CONFIG.catalogWorkoutsBase + '/' + clean);
-        if (!res.ok) throw new Error('Workout file fetch failed: ' + res.status);
+        var clean = String(file || '').trim().replace(/\\/g, '/').replace(/^\/+/, '');
+        clean = clean.replace(/^workouts\//, '');
+        var segments = clean.split('/');
+        if (!clean || segments.some(function (part) { return !part || part === '.' || part === '..'; })) {
+            throw new Error('Invalid workout catalog file path');
+        }
+        var encodedPath = segments.map(function (part) { return encodeURIComponent(part); }).join('/');
+        var url = CONFIG.catalogWorkoutsBase.replace(/\/+$/, '') + '/' + encodedPath;
+        var res = await fetch(url);
+        if (!res.ok) throw new Error('Workout file fetch failed: ' + res.status + ' (' + clean + ')');
         return res.text();
     };
 
@@ -113,6 +120,37 @@
         }).sort(function (a, b) { return a.id.localeCompare(b.id); });
     };
 
+    ApiManager.prototype.listGeminiModels = async function (apiKey) {
+        if (!apiKey) throw new Error('Gemini API key is required to load models');
+        var models = [];
+        var pageToken = '';
+        do {
+            var url = CONFIG.geminiBase + '/models?pageSize=100';
+            if (pageToken) url += '&pageToken=' + encodeURIComponent(pageToken);
+            var res = await fetch(url, {
+                headers: { 'x-goog-api-key': apiKey }
+            });
+            if (!res.ok) {
+                throw new Error('Gemini model list failed: ' + res.status + ' ' + (await res.text()));
+            }
+            var data = await res.json();
+            models = models.concat((data.models || []).filter(function (model) {
+                return model.name &&
+                    /^models\/gemini-/i.test(model.name) &&
+                    (model.supportedGenerationMethods || []).indexOf('generateContent') !== -1;
+            }).map(function (model) {
+                return {
+                    id: model.name.replace(/^models\//, ''),
+                    name: model.displayName || model.name.replace(/^models\//, ''),
+                    context: model.inputTokenLimit || 0
+                };
+            }));
+            pageToken = data.nextPageToken || '';
+        } while (pageToken);
+
+        return models.sort(function (a, b) { return a.id.localeCompare(b.id); });
+    };
+
     /**
      * Streaming chat completion.
      * @param {Array} messages
@@ -122,19 +160,32 @@
     ApiManager.prototype.chat = async function (messages, opts) {
         opts = opts || {};
         var s = this._settings();
-        var model = opts.model || s.model;
-        if (!s.openrouterKey) throw new Error('OpenRouter API key is required');
+        var provider = s.provider || 'openrouter';
+        var isGemini = provider === 'gemini';
+        var model = opts.model || (isGemini ? s.geminiModel : s.model);
+        var apiKey = isGemini ? s.geminiKey : s.openrouterKey;
+        var providerName = isGemini ? 'Gemini' : 'OpenRouter';
+        var endpoint = isGemini
+            ? CONFIG.geminiOpenAiBase + '/chat/completions'
+            : CONFIG.openRouterBase + '/chat/completions';
+        if (provider !== 'openrouter' && provider !== 'gemini') {
+            throw new Error('Unsupported AI provider: ' + provider);
+        }
+        if (!apiKey) throw new Error(providerName + ' API key is required');
         if (!model) throw new Error('No model selected');
-        this._reserveFreeModelRequest();
+        if (!isGemini) this._reserveFreeModelRequest();
 
-        var res = await fetch(CONFIG.openRouterBase + '/chat/completions', {
+        var headers = {
+            'Authorization': 'Bearer ' + apiKey,
+            'Content-Type': 'application/json'
+        };
+        if (!isGemini) {
+            headers['HTTP-Referer'] = location.origin;
+            headers['X-Title'] = 'AI Cycling Coach';
+        }
+        var res = await fetch(endpoint, {
             method: 'POST',
-            headers: {
-                'Authorization': 'Bearer ' + s.openrouterKey,
-                'Content-Type': 'application/json',
-                'HTTP-Referer': location.origin,
-                'X-Title': 'AI Cycling Coach'
-            },
+            headers: headers,
             body: JSON.stringify({
                 model: model,
                 messages: messages,
@@ -143,7 +194,7 @@
             }),
             signal: opts.signal
         });
-        if (!res.ok) throw new Error('OpenRouter error: ' + res.status + ' ' + (await res.text()));
+        if (!res.ok) throw new Error(providerName + ' error: ' + res.status + ' ' + (await res.text()));
         if (!res.body || !res.body.getReader) {
             var j = await res.json();
             return (j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content) || '';

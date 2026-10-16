@@ -123,6 +123,66 @@
         return result;
     }
 
+    function findCandidates(workouts, query) {
+        var list = Array.isArray(workouts) ? workouts : [];
+        if (!list.length) return { rows: [], relaxed: [], catalogAvailable: false };
+
+        var original = Object.assign({}, query || {});
+        original.limit = original.limit > 0 ? Math.min(Math.floor(original.limit), DEFAULT_LIMIT) : DEFAULT_LIMIT;
+        var attempts = [
+            { query: original, relaxed: [] },
+            {
+                query: Object.assign({}, original, { tss_min: undefined, tss_max: undefined }),
+                relaxed: ['TSS bounds']
+            },
+            {
+                query: Object.assign({}, original, {
+                    tss_min: undefined,
+                    tss_max: undefined,
+                    category_keywords: []
+                }),
+                relaxed: ['TSS bounds', 'category keywords']
+            },
+            {
+                query: Object.assign({}, original, {
+                    tss_min: undefined,
+                    tss_max: undefined,
+                    category_keywords: [],
+                    zones: []
+                }),
+                relaxed: ['TSS bounds', 'category keywords', 'target zone']
+            },
+            {
+                query: Object.assign({}, original, {
+                    tss_min: undefined,
+                    tss_max: undefined,
+                    category_keywords: [],
+                    zones: [],
+                    duration_min: undefined,
+                    duration_max: undefined
+                }),
+                relaxed: ['TSS bounds', 'category keywords', 'target zone', 'duration']
+            }
+        ];
+
+        for (var i = 0; i < attempts.length; i++) {
+            var rows = filterCatalog(list, attempts[i].query);
+            if (rows.length) {
+                return {
+                    rows: rows,
+                    relaxed: attempts[i].relaxed,
+                    catalogAvailable: true
+                };
+            }
+        }
+
+        return {
+            rows: [],
+            relaxed: attempts[attempts.length - 1].relaxed,
+            catalogAvailable: true
+        };
+    }
+
     function truncate(s, n) {
         s = String(s || '');
         return s.length > n ? s.slice(0, n - 1) + '\u2026' : s;
@@ -145,11 +205,19 @@
 
     function formatCandidates(rows) {
         if (!rows || !rows.length) return 'No catalog workouts matched those criteria.';
-        var lines = ['Candidate workouts (from local catalog summary):',
-            'id | name | min | zone | tss | file'];
-        rows.forEach(function (r) {
-            var c = toCandidate(r);
-            lines.push([c.id, c.name, c.duration_min, c.zone, c.tss, c.file].join(' | '));
+        var lines = ['Candidate workouts (from local catalog summary):'];
+        rows.forEach(function (workout, index) {
+            var r = toCandidate(workout);
+            lines.push(
+                (index + 1) + '. ' + r.name + ' (' + r.id + ')' +
+                ' | author: ' + r.author +
+                ' | duration: ' + r.duration_min + ' min' +
+                ' | zone: ' + r.zone +
+                ' | TSS: ' + r.tss +
+                ' | category: ' + [r.category, r.subcategory].filter(Boolean).join(' / ') +
+                ' | file: ' + r.file +
+                ' | description: ' + r.description
+            );
         });
         return lines.join('\n');
     }
@@ -158,6 +226,7 @@
         KNOWN_FIELDS: KNOWN_FIELDS,
         parseCatalog: parseCatalog,
         filterCatalog: filterCatalog,
+        findCandidates: findCandidates,
         toCandidate: toCandidate,
         formatCandidates: formatCandidates,
         truncate: truncate

@@ -208,7 +208,7 @@
         if (label && min && max) label.textContent = 'TSS: ' + (min.value || 0) + ' - ' + (max.value || 500);
     };
 
-    UIManager.prototype.showWorkoutDetail = function (w) {
+    UIManager.prototype.showWorkoutDetail = function (w, scheduledPush) {
         var self = this;
         var modal = this.$('workoutModal');
         if (!modal || !w) return;
@@ -220,17 +220,25 @@
         this.$('detailZone').textContent = w.primary_zone ? ('Zone ' + w.primary_zone) : 'N/A';
         this.$('detailTSS').textContent = (w.tss != null ? w.tss : 0);
         this.$('detailAvgPower').textContent = w.avg_power || 0;
+        var schedule = this.$('detailSchedule');
+        if (schedule) {
+            schedule.hidden = !scheduledPush;
+            schedule.textContent = scheduledPush
+                ? 'Planned for ' + scheduledPush.date +
+                    (scheduledPush.reason ? ' · ' + scheduledPush.reason : '')
+                : '';
+        }
         window.selectedWorkout = w;
         modal.style.display = 'flex';
 
-        // Fetch .zwo file for segment chart data
+        var requestId = (this._workoutDetailRequest || 0) + 1;
+        this._workoutDetailRequest = requestId;
+        var chart = this.$('intensityContainer');
+        if (chart) chart.innerHTML = '<p class="intensity-note">Loading workout profile…</p>';
         if (w.file) {
-            var baseUrl = (typeof window !== 'undefined' && window.CONFIG && window.CONFIG.catalogWorkoutsBase)
-                ? window.CONFIG.catalogWorkoutsBase : 'https://raw.githubusercontent.com/JC-Concepts/WorkoutGenerator/refs/heads/main/workouts';
-            var url = baseUrl + '/' + w.file;
-            fetch(url)
-                .then(function (r) { return r.ok ? r.text() : ''; })
+            this.app.api.fetchCatalogWorkout(w.file)
                 .then(function (text) {
+                    if (self._workoutDetailRequest !== requestId) return;
                     var segments = self.parseZwoSegments(text);
                     if (segments && segments.length) {
                         w.segments = segments;
@@ -238,7 +246,7 @@
                     self.renderWorkoutIntensity(w);
                 })
                 .catch(function () {
-                    self.renderWorkoutIntensity(w);
+                    if (self._workoutDetailRequest === requestId) self.renderWorkoutIntensity(w);
                 });
         } else {
             this.renderWorkoutIntensity(w);
@@ -340,22 +348,39 @@
         var s = settings || {};
         var map = {
             setAthleteId: 'athleteId', setIntervalsKey: 'intervalsKey',
-            setOpenrouterKey: 'openrouterKey', setModel: 'model'
+            setOpenrouterKey: 'openrouterKey', setModel: 'model',
+            setGeminiKey: 'geminiKey', setGeminiModel: 'geminiModel'
         };
         Object.keys(map).forEach((function (id) {
             var el = this.$(id);
-            if (el) el.value = s[map[id]] || '';
+            if (el && id !== 'setGeminiModel') el.value = s[map[id]] || '';
         }).bind(this));
+        this.fillGeminiModelSelect([], s.geminiModel);
+        var provider = this.$('aiProvider');
+        if (provider) provider.value = s.provider || 'openrouter';
+        this.updateProviderSettings();
     };
 
     UIManager.prototype.readSettingsForm = function () {
         function val(id) { var e = document.getElementById(id); return e ? e.value.trim() : ''; }
         return {
+            provider: val('aiProvider') || 'openrouter',
             athleteId: val('setAthleteId'),
             intervalsKey: val('setIntervalsKey'),
             openrouterKey: val('setOpenrouterKey'),
-            model: val('setModel')
+            model: val('setModel'),
+            geminiKey: val('setGeminiKey'),
+            geminiModel: val('setGeminiModel')
         };
+    };
+
+    UIManager.prototype.updateProviderSettings = function () {
+        var provider = this.$('aiProvider');
+        var openrouter = this.$('openrouterProviderSettings');
+        var gemini = this.$('geminiProviderSettings');
+        var useGemini = provider && provider.value === 'gemini';
+        if (openrouter) openrouter.hidden = !!useGemini;
+        if (gemini) gemini.hidden = !useGemini;
     };
 
     UIManager.prototype.setDriveStatus = function (connected) {
@@ -374,6 +399,24 @@
             models.map(function (m) {
                 return '<option value="' + this.esc(m.id) + '"' + (m.id === current ? ' selected' : '') + '>' + this.esc(m.name || m.id) + '</option>';
             }, this).join('');
+    };
+
+    UIManager.prototype.fillGeminiModelSelect = function (models, current) {
+        var sel = this.$('setGeminiModel');
+        if (!sel) return;
+        var options = models || [];
+        sel.innerHTML = '<option value="">Select an available Gemini model\u2026</option>' +
+            options.map(function (m) {
+                return '<option value="' + this.esc(m.id) + '"' +
+                    (m.id === current ? ' selected' : '') + '>' +
+                    this.esc(m.name || m.id) + ' (' + this.esc(m.id) + ')</option>';
+            }, this).join('');
+        if (current && options.some(function (m) { return m.id === current; })) {
+            sel.value = current;
+        } else if (options.length) {
+            var preferred = options.find(function (m) { return /flash/i.test(m.id); }) || options[0];
+            sel.value = preferred.id;
+        }
     };
 
     window.UIManager = UIManager;

@@ -1,7 +1,7 @@
 /**
- * context.js - Context Builder. Selects and trims athlete data (Tier 1) so the
- * model receives a bounded payload. The raw 433 KB catalog and unbounded history
- * are NEVER passed through here whole.
+ * context.js - Context Builder. Includes complete selected athlete JSON files
+ * in the model context. The raw workout catalog and chat history are handled
+ * separately.
  * Dual-export; pure functions.
  */
 'use strict';
@@ -23,81 +23,17 @@
         return isNaN(t) ? null : t;
     }
 
-    function pick(obj, keys) {
-        var out = {};
-        if (!obj) return out;
-        keys.forEach(function (k) { if (obj[k] !== undefined) out[k] = obj[k]; });
-        return out;
-    }
-
-    // Tier 1 (always) top-level keys from latest.json and friends.
-    var LATEST_KEYS = [
-        'metadata', 'readiness_decision', 'health_context', 'summary',
-        'weekly_summary', 'athlete_profile', 'planned_events', 'derived_metrics'
-    ];
-
     var TIER2_FILES = [
         { key: 'history.json', option: 'history', intent: /phenotype|trend|history|power[\s-]?duration|power curve|fitness progression/i },
-        { key: 'intervals.json', option: 'intervals', intent: /phenotype|interval|dfa|power[\s-]?duration|ride analysis/i },
+        {
+            key: 'intervals.json',
+            option: 'intervals',
+            intent: /phenotype|interval|dfa|power[\s-]?duration|ride analysis|(?:latest|most recent|last|yesterday'?s?)\s+(?:workout|ride|session)|(?:analy[sz](?:e|ing|is)|review|summari[sz]e)\s+(?:(?:my|the)\s+)?(?:(?:latest|most recent|last|yesterday'?s?)\s+)?(?:workout|ride|session)|(?:workout|ride|session)\s+(?:analysis|review|summary|details|metrics)/i
+        },
         { key: 'routes.json', option: 'routes', intent: /phenotype|route|terrain|event course/i },
         { key: 'saved_workouts.json', option: 'savedWorkouts', intent: /saved workouts?|already saved/i },
         { key: 'ftp_history.json', option: 'ftpHistory', intent: /phenotype|ftp|threshold|power curve/i }
     ];
-
-    function sliceLatest(latest, includePhenotypeData) {
-        if (!latest || typeof latest !== 'object') return null;
-        var keys = includePhenotypeData
-            ? LATEST_KEYS.concat(['current_status', 'recent_activities', 'history', 'workout_summary_stats'])
-            : LATEST_KEYS;
-        var sliced = pick(latest, keys);
-        var quick = (latest.READ_THIS_FIRST && latest.READ_THIS_FIRST.quick_stats) || latest.quick_stats;
-        if (quick) sliced.quick_stats = quick;
-        return sliced;
-    }
-
-    function trimJSON(obj, maxChars) {
-        if (obj == null) return '';
-        var s = JSON.stringify(obj, null, 1);
-        if (s.length <= maxChars) return s;
-
-        var copy = JSON.parse(JSON.stringify(obj));
-        var omitted = 0;
-        function largestArray(node, result) {
-            if (!node || typeof node !== 'object') return;
-            if (Array.isArray(node)) {
-                if (node.length > result.length) result.array = node, result.length = node.length;
-                node.forEach(function (item) { largestArray(item, result); });
-            } else {
-                Object.keys(node).forEach(function (key) { largestArray(node[key], result); });
-            }
-        }
-
-        var dataText = JSON.stringify(copy, null, 1);
-        while (dataText.length > maxChars - 100) {
-            var result = { array: null, length: 0 };
-            largestArray(copy, result);
-            if (!result.array || !result.array.length) break;
-            var removeCount = Math.max(1, Math.ceil(result.array.length / 10));
-            result.array.splice(0, removeCount);
-            omitted += removeCount;
-            dataText = JSON.stringify(copy, null, 1);
-        }
-        if (dataText.length > maxChars - 100) {
-            var preview = dataText.slice(0, Math.max(0, maxChars - 500));
-            var previewText = '';
-            do {
-                previewText = JSON.stringify({
-                    truncated: true,
-                    omitted_items: omitted,
-                    preview: preview
-                }, null, 1);
-                if (previewText.length <= maxChars) break;
-                preview = preview.slice(0, Math.max(0, preview.length - 100));
-            } while (preview.length);
-            return previewText;
-        }
-        return JSON.stringify({ truncated: true, omitted_items: omitted, data: JSON.parse(dataText) }, null, 1);
-    }
 
     function selectHistory(messages, maxTokens) {
         var budget = Math.max(0, Number(maxTokens) || CONFIG.contextTier2Tokens || 8000);
@@ -200,13 +136,12 @@
         parts.push('\n-- Available athlete files --');
         available.forEach(function (entry) { parts.push(entry); });
 
-        var sliced = sliceLatest(files['latest.json'], phenotypeRequest);
-        if (sliced) {
+        if (files['latest.json']) {
             injectedFiles.push('latest.json');
             parts.push(phenotypeRequest
                 ? '\n-- Latest data (Tier 1; phenotype sources) --'
                 : '\n-- Latest data (Tier 1) --');
-            parts.push(trimJSON(sliced, phenotypeRequest ? CONFIG.contextTier2Tokens * 4 : 6000));
+            parts.push(JSON.stringify(files['latest.json'], null, 1));
         } else {
             parts.push('\n-- Latest data --\n(none cached; prompting sync)');
         }
@@ -215,7 +150,7 @@
             if (!(phenotypeRequest || file.intent.test(intent)) || !files[file.key]) return;
             injectedFiles.push(file.key);
             parts.push('\n-- ' + file.key + ' (Tier 2) --');
-            parts.push(trimJSON(files[file.key], CONFIG.contextTier2Tokens * 4));
+            parts.push(JSON.stringify(files[file.key], null, 1));
         });
 
         var injectedFreshness = freshness.filter(function (file) {
@@ -254,11 +189,9 @@
     var api = {
         estimateTokens: estimateTokens,
         parseTime: parseTime,
-        sliceLatest: sliceLatest,
         buildFreshness: buildFreshness,
         buildContext: buildContext,
         selectHistory: selectHistory,
-        LATEST_KEYS: LATEST_KEYS,
         TIER2_FILES: TIER2_FILES
     };
     if (typeof module !== 'undefined' && module.exports) module.exports = api;

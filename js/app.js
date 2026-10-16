@@ -32,6 +32,7 @@
         this.activeChatSessionId = '';
         this.deletedChatSessionIds = [];
         this.chatSessionsAthleteId = '';
+        this._pendingCoachPush = null;
     }
 
     // -------------------------------------------------------------- lifecycle
@@ -58,7 +59,15 @@
             if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); self.sendChat(); }
         });
         this._bind('saveSettingsBtn', 'click', function () { self.saveSettings(); });
+        this._bind('aiProvider', 'change', function () {
+            self.ui.updateProviderSettings();
+            if (this.value === 'gemini') self.loadGeminiModels(false);
+        });
+        this._bind('setGeminiModel', 'change', function () {
+            if (this.value) self.storage.patchSettings({ geminiModel: this.value });
+        });
         this._bind('loadModelsBtn', 'click', function () { self.loadModels(true); });
+        this._bind('loadGeminiModelsBtn', 'click', function () { self.loadGeminiModels(true); });
         this._bind('runSyncBtn', 'click', function () { self.runSync(); });
         this._bind('connectDriveBtn', 'click', function () { self.connectDrive(); });
         this._bind('disconnectDriveBtn', 'click', function () { self.disconnectDrive(); });
@@ -108,7 +117,8 @@
         this.loadMemoryFromStorage();
         this.loadChatSessions();
         await this.loadCatalog();
-        this.loadModels(false);
+        if (settings.provider === 'gemini') this.loadGeminiModels(false);
+        else this.loadModels(false);
         this.startMemoryFlush();
         await this.loadAthleteData().catch(function (error) {
             self.ui.showToast('Could not load private Google Drive data: ' + error.message, 'warning');
@@ -219,19 +229,49 @@
 
     App.prototype.showWorkoutDetail = function (id) {
         var w = this.catalog.find(function (x) { return String(x.id) === String(id); });
-        if (w) this.ui.showWorkoutDetail(w);
+        if (w) {
+            this._pendingCoachPush = null;
+            this.ui.showWorkoutDetail(w);
+        }
+    };
+
+    App.prototype.previewCoachWorkout = function (push) {
+        var workout = this.catalog.find(function (item) {
+            return String(item.id) === String(push.workout_id);
+        });
+        if (!workout) {
+            this.ui.appendSystemNote('The recommended workout is not available in the local catalog, so it cannot be previewed or uploaded.');
+            return;
+        }
+        this._pendingCoachPush = {
+            workout_id: push.workout_id,
+            date: push.date,
+            reason: push.reason || ''
+        };
+        this.ui.showWorkoutDetail(workout, this._pendingCoachPush);
     };
 
     // -------------------------------------------------------------- settings
-    App.prototype.saveSettings = function () {
+    App.prototype.saveSettings = async function () {
         var previousAthleteId = this.storage.getSettings().athleteId || '';
         var s = this.ui.readSettingsForm();
+        var modelLoad = null;
+        if (s.provider === 'gemini' && s.geminiKey) {
+            modelLoad = await this.loadGeminiModels(false);
+            s = this.ui.readSettingsForm();
+        }
         var v = window.CoachSettings.validateSettings(s);
         this.storage.saveSettings(s);
         if ((s.athleteId || '') !== previousAthleteId) {
             this.loadChatSessions();
         }
-        this.ui.showToast(v.ok ? 'Settings saved.' : 'Saved, but some fields are still missing.', v.ok ? 'success' : 'warning');
+        if (modelLoad && modelLoad.error) {
+            this.ui.showToast('Settings saved, but Gemini models could not be checked: ' + modelLoad.error.message, 'warning');
+        } else if (modelLoad && !modelLoad.models.length) {
+            this.ui.showToast('Settings saved, but Google returned no Gemini text-generation models for this API key.', 'warning');
+        } else {
+            this.ui.showToast(v.ok ? 'Settings saved.' : 'Saved, but some fields are still missing.', v.ok ? 'success' : 'warning');
+        }
         this.refreshDashboard();
     };
 
@@ -363,6 +403,34 @@
         } catch (e) {
             if (cached && cached.list) this.ui.fillModelSelect(cached.list, this.storage.getSettings().model);
             if (force) this.ui.showToast('Could not load models: ' + e.message, 'error');
+        }
+    };
+
+    App.prototype.loadGeminiModels = async function (force) {
+        var input = this.ui.$('setGeminiKey');
+        var apiKey = input && input.value.trim();
+        if (!apiKey) apiKey = this.storage.getSettings().geminiKey || '';
+        if (!apiKey) {
+            if (force) this.ui.showToast('Enter and save a Gemini API key before loading models.', 'warning');
+            return { models: [], error: null };
+        }
+        try {
+            var models = await this.api.listGeminiModels(apiKey);
+            var selector = this.ui.$('setGeminiModel');
+            var savedModel = this.storage.getSettings().geminiModel || '';
+            var current = (selector && selector.value) || savedModel;
+            this.ui.fillGeminiModelSelect(models, current);
+            var selected = selector && selector.value;
+            if (selected && selected !== savedModel) this.storage.patchSettings({ geminiModel: selected });
+            if (!models.length) {
+                if (force) this.ui.showToast('Google returned no Gemini text-generation models for this API key.', 'warning');
+            } else if (force) {
+                this.ui.showToast('Loaded ' + models.length + ' Gemini models available to this API key.', 'success');
+            }
+            return { models: models, error: null };
+        } catch (error) {
+            if (force) this.ui.showToast('Could not load Gemini models: ' + error.message, 'error');
+            return { models: null, error: error };
         }
     };
 
@@ -731,8 +799,14 @@
         if (!window.selectedWorkout) return;
         var d = new Date();
         var date = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+        var push = this._pendingCoachPush || {
+            workout_id: window.selectedWorkout.id,
+            date: date,
+            reason: 'Manual push'
+        };
+        this._pendingCoachPush = null;
         this.ui.closeModal('workoutModal');
-        this.confirmPush({ workout_id: window.selectedWorkout.id, date: date, reason: 'Manual push' });
+        this.confirmPush(push);
     };
 
     // -------------------------------------------------------------- dossier

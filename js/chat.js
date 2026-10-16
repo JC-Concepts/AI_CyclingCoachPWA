@@ -77,7 +77,7 @@
 
             var dossierText = this.app.getDossierText();
             var interviewMode = text && text.toLowerCase().indexOf('interview') >= 0;
-            var hiddenSkillRequest = 'All Markdown files discovered in the public Skills/ directory are included in the system context. Apply relevant skills; do not assume the skill set is limited to named examples. Use the Section 11 coaching protocol and workout reference as binding framework sources.';
+            var hiddenSkillRequest = 'All Markdown files discovered in the public Skills/ directory are included in the system context. Apply relevant skills; do not assume the skill set is limited to named examples. Use only reference documents and workout data actually included in the system context or app tool results; do not claim to load unavailable references.';
             if (interviewMode) {
                 hiddenSkillRequest += ' INTERVIEW MODE ACTIVE: athlete is in dossier intake. Read previous dossier below. Ask ONE question card only, then stop. Do not coach. If previous dossier exists, ask what needs updating.';
             }
@@ -94,8 +94,18 @@
             var toolTurns = 0;
             while (blocks.search && toolTurns < 2) {
                 var q = window.CoachBlocks.normalizeSearchBlock(blocks.search);
-                var rows = window.CoachCatalog.filterCatalog(this.app.getCatalog(), q);
-                var toolResult = 'TOOL_RESULT\n' + window.CoachCatalog.formatCandidates(rows);
+                var search = window.CoachCatalog.findCandidates(this.app.getCatalog(), q);
+                var toolResult;
+                if (!search.catalogAvailable) {
+                    toolResult = 'TOOL_RESULT\nWORKOUT_CATALOG_UNAVAILABLE: The workout catalog is not loaded in the app. Do not claim that no workouts match; explain the catalog is unavailable.';
+                } else if (search.relaxed.length) {
+                    toolResult = 'TOOL_RESULT\nNo exact catalog matches were found. The following candidates are best-fit results after relaxing these generated search constraints: ' +
+                        search.relaxed.join(', ') +
+                        '. These are suggestions, not a confirmation that every original constraint is met. Evaluate them against the athlete request and context; state any relaxed constraint.' +
+                        '\n' + window.CoachCatalog.formatCandidates(search.rows);
+                } else {
+                    toolResult = 'TOOL_RESULT\n' + window.CoachCatalog.formatCandidates(search.rows);
+                }
                 messages.push({ role: 'assistant', content: full });
                 messages.push({ role: 'user', content: toolResult });
                 full = await this._stream(el, messages);
@@ -110,7 +120,7 @@
             }
             if (blocks.push) {
                 var val = window.CoachBlocks.validatePushBlock(blocks.push, this._todayIso());
-                if (val.ok) this.ui.showPushConfirm(blocks.push);
+                if (val.ok) this.app.previewCoachWorkout(blocks.push);
                 else this.ui.appendSystemNote('Push request rejected: ' + val.error);
             }
             if (blocks.dossier) this.ui.showDossierDiff(blocks.dossier);

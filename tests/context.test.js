@@ -20,14 +20,6 @@ test('estimateTokens is length/4 rounded up', () => {
     assert.equal(C.estimateTokens(''), 0);
 });
 
-test('sliceLatest keeps whitelisted keys plus quick_stats', () => {
-    const s = C.sliceLatest(latestFresh());
-    assert.ok(s.metadata);
-    assert.ok(s.readiness_decision);
-    assert.deepEqual(s.quick_stats, { ctl: 55, atl: 60, tsb: -5 });
-    assert.equal(s.evil_extra, undefined);
-});
-
 test('buildFreshness flags stale data', () => {
     const fresh = C.buildFreshness({ latest: latestFresh() }, NOW);
     assert.equal(fresh.length, 1);
@@ -88,8 +80,10 @@ test('buildContext includes relevant cached files for phenotype requests', () =>
     assert.ok(ctx.dataMessage.includes('-- Latest data (Tier 1; phenotype sources) --'));
     const latestSection = ctx.dataMessage.split('-- Latest data (Tier 1; phenotype sources) --\n')[1]
         .split('\n-- ')[0];
-    assert.ok(latestSection.includes('current_status'));
-    assert.ok(latestSection.includes('recent_activities'));
+    assert.deepEqual(JSON.parse(latestSection), Object.assign(latestFresh(), {
+        current_status: { thresholds: { eftp: 250 } },
+        recent_activities: [{ date: '2030-01-09', average_watts: 300 }]
+    }));
 });
 
 test('buildContext includes saved workouts when the athlete asks about them', () => {
@@ -99,6 +93,26 @@ test('buildContext includes saved workouts when the athlete asks about them', ()
         now: NOW
     });
     assert.ok(ctx.dataMessage.includes('-- saved_workouts.json (Tier 2) --'));
+});
+
+test('buildContext includes complete intervals data for latest workout analysis', () => {
+    const intervals = {
+        activities: [{
+            activity_id: 'ride-yesterday',
+            date: '2030-01-09',
+            name: 'Threshold intervals',
+            intervals: [{ duration: 480, average_watts: 250 }]
+        }]
+    };
+    const ctx = C.buildContext({
+        intervals,
+        intent: 'Analyze the latest workout',
+        now: NOW
+    });
+
+    assert.ok(ctx.dataMessage.includes('-- intervals.json (Tier 2) --'));
+    const intervalsSection = ctx.dataMessage.split('-- intervals.json (Tier 2) --\n')[1].split('\n-- ')[0];
+    assert.deepEqual(JSON.parse(intervalsSection), intervals);
 });
 
 test('buildContext explains file availability without injecting unrelated Tier 2 data', () => {
@@ -113,17 +127,47 @@ test('buildContext explains file availability without injecting unrelated Tier 2
     assert.ok(!ctx.dataMessage.includes('-- history.json (Tier 2) --'));
 });
 
-test('trimmed JSON remains parseable and marks omitted content', () => {
+test('large JSON files are passed to the model in full without trimming', () => {
+    const history = {
+        daily_90d: Array.from({ length: 500 }, (_, index) => ({
+            date: String(index),
+            value: 'x'.repeat(200)
+        }))
+    };
+    const intervals = {
+        activities: Array.from({ length: 500 }, (_, index) => ({
+            id: 'ride-' + index,
+            intervals: Array.from({ length: 4 }, (__, intervalIndex) => ({
+                index: intervalIndex,
+                detail: 'x'.repeat(50)
+            }))
+        }))
+    };
     const ctx = C.buildContext({
         latest: latestFresh(),
-        history: { daily_90d: Array.from({ length: 500 }, (_, index) => ({ date: String(index), value: 'x'.repeat(200) })) },
-        intent: 'history trend',
+        history,
+        intervals,
+        intent: 'history trend and interval analysis',
         now: NOW
     });
-    const section = ctx.dataMessage.split('-- history.json (Tier 2) --\n')[1].split('\n-- ')[0];
-    const parsed = JSON.parse(section);
-    assert.equal(parsed.truncated, true);
-    assert.ok(parsed.omitted_items > 0);
+    const historySection = ctx.dataMessage.split('-- history.json (Tier 2) --\n')[1].split('\n-- ')[0];
+    const intervalsSection = ctx.dataMessage.split('-- intervals.json (Tier 2) --\n')[1].split('\n-- ')[0];
+    assert.deepEqual(JSON.parse(historySection), history);
+    assert.deepEqual(JSON.parse(intervalsSection), intervals);
+    assert.ok(!historySection.includes('"truncated"'));
+    assert.ok(!intervalsSection.includes('"truncated"'));
+});
+
+test('complete latest JSON includes fields outside former whitelist for every request', () => {
+    const latest = Object.assign(latestFresh(), {
+        READ_THIS_FIRST: { instructions: 'read me', quick_stats: { ctl: 55 } },
+        recent_activities: [{ id: 'activity-1', metrics: { power: 220 } }],
+        custom_metrics: { test: true }
+    });
+    const ctx = C.buildContext({ latest, intent: 'How ready am I today?', now: NOW });
+    const latestSection = ctx.dataMessage.split('-- Latest data (Tier 1) --\n')[1].split('\n-- ')[0];
+
+    assert.deepEqual(JSON.parse(latestSection), latest);
 });
 
 test('selectHistory retains recent conversation turns within a token budget, not a fixed count', () => {

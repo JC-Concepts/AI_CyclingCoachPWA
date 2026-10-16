@@ -19,6 +19,23 @@ test('validateSettings passes when complete', () => {
     assert.deepEqual(r.missing, []);
 });
 
+test('validateSettings requires Gemini credentials only when Gemini is selected', () => {
+    const missing = S.validateSettings({ provider: 'gemini', athleteId: 'i1', intervalsKey: 'k' });
+    assert.deepEqual(missing.missing.map(f => f.key), ['geminiKey', 'geminiModel']);
+
+    const valid = S.validateSettings({
+        provider: 'gemini', athleteId: 'i1', intervalsKey: 'k',
+        geminiKey: 'g', geminiModel: 'gemini-2.5-flash'
+    });
+    assert.equal(valid.ok, true);
+});
+
+test('validateSettings rejects an unsupported AI provider', () => {
+    const result = S.validateSettings({ provider: 'unknown' });
+    assert.equal(result.ok, false);
+    assert.ok(result.missing.some(f => f.key === 'provider'));
+});
+
 test('validateSettings treats whitespace as blank', () => {
     const r = S.validateSettings({
         athleteId: 'i1', intervalsKey: '  ', openrouterKey: 'o', model: 'm'
