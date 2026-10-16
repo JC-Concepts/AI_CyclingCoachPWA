@@ -1,7 +1,7 @@
 /**
  * context.js - Context Builder. Selects and trims athlete data (Tier 1) so the
- * model receives a bounded payload. The raw 433 KB catalog and full history are
- * NEVER passed through here whole.
+ * model receives a bounded payload. The raw 433 KB catalog and unbounded history
+ * are NEVER passed through here whole.
  * Dual-export; pure functions.
  */
 'use strict';
@@ -36,9 +36,20 @@
         'weekly_summary', 'athlete_profile', 'planned_events', 'derived_metrics'
     ];
 
-    function sliceLatest(latest) {
+    var TIER2_FILES = [
+        { key: 'history.json', option: 'history', intent: /phenotype|trend|history|power[\s-]?duration|power curve|fitness progression/i },
+        { key: 'intervals.json', option: 'intervals', intent: /phenotype|interval|dfa|power[\s-]?duration|ride analysis/i },
+        { key: 'routes.json', option: 'routes', intent: /phenotype|route|terrain|event course/i },
+        { key: 'saved_workouts.json', option: 'savedWorkouts', intent: /saved workouts?|already saved/i },
+        { key: 'ftp_history.json', option: 'ftpHistory', intent: /phenotype|ftp|threshold|power curve/i }
+    ];
+
+    function sliceLatest(latest, includePhenotypeData) {
         if (!latest || typeof latest !== 'object') return null;
-        var sliced = pick(latest, LATEST_KEYS);
+        var keys = includePhenotypeData
+            ? LATEST_KEYS.concat(['current_status', 'recent_activities', 'history', 'workout_summary_stats'])
+            : LATEST_KEYS;
+        var sliced = pick(latest, keys);
         var quick = (latest.READ_THIS_FIRST && latest.READ_THIS_FIRST.quick_stats) || latest.quick_stats;
         if (quick) sliced.quick_stats = quick;
         return sliced;
@@ -47,8 +58,71 @@
     function trimJSON(obj, maxChars) {
         if (obj == null) return '';
         var s = JSON.stringify(obj, null, 1);
-        if (s.length > maxChars) s = s.slice(0, maxChars) + '\n\u2026 [truncated]';
-        return s;
+        if (s.length <= maxChars) return s;
+
+        var copy = JSON.parse(JSON.stringify(obj));
+        var omitted = 0;
+        function largestArray(node, result) {
+            if (!node || typeof node !== 'object') return;
+            if (Array.isArray(node)) {
+                if (node.length > result.length) result.array = node, result.length = node.length;
+                node.forEach(function (item) { largestArray(item, result); });
+            } else {
+                Object.keys(node).forEach(function (key) { largestArray(node[key], result); });
+            }
+        }
+
+        var dataText = JSON.stringify(copy, null, 1);
+        while (dataText.length > maxChars - 100) {
+            var result = { array: null, length: 0 };
+            largestArray(copy, result);
+            if (!result.array || !result.array.length) break;
+            var removeCount = Math.max(1, Math.ceil(result.array.length / 10));
+            result.array.splice(0, removeCount);
+            omitted += removeCount;
+            dataText = JSON.stringify(copy, null, 1);
+        }
+        if (dataText.length > maxChars - 100) {
+            var preview = dataText.slice(0, Math.max(0, maxChars - 500));
+            var previewText = '';
+            do {
+                previewText = JSON.stringify({
+                    truncated: true,
+                    omitted_items: omitted,
+                    preview: preview
+                }, null, 1);
+                if (previewText.length <= maxChars) break;
+                preview = preview.slice(0, Math.max(0, preview.length - 100));
+            } while (preview.length);
+            return previewText;
+        }
+        return JSON.stringify({ truncated: true, omitted_items: omitted, data: JSON.parse(dataText) }, null, 1);
+    }
+
+    function selectHistory(messages, maxTokens) {
+        var budget = Math.max(0, Number(maxTokens) || CONFIG.contextTier2Tokens || 8000);
+        var selected = [];
+        var used = 0;
+        var list = Array.isArray(messages) ? messages : [];
+        for (var i = list.length - 1; i >= 0; i--) {
+            var message = list[i] || {};
+            var text = String(message.text || '');
+            var cost = estimateTokens(text);
+            if (cost <= budget - used) {
+                selected.unshift({ role: message.role, text: text });
+                used += cost;
+                continue;
+            }
+            if (!selected.length && budget > 0) {
+                var maxChars = budget * 4;
+                selected.unshift({
+                    role: message.role,
+                    text: text.slice(-maxChars)
+                });
+            }
+            break;
+        }
+        return selected;
     }
 
     function buildFreshness(files, nowMs) {
@@ -82,16 +156,20 @@
         var nowIso = new Date(nowMs).toISOString();
 
         var files = {
-            latest: opts.latest || null,
-            intervals: opts.intervals || null,
-            routes: opts.routes || null,
-            saved_workouts: opts.savedWorkouts || null,
-            ftp_history: opts.ftpHistory || null
+            'latest.json': opts.latest || null,
+            'history.json': opts.history || null,
+            'intervals.json': opts.intervals || null,
+            'routes.json': opts.routes || null,
+            'saved_workouts.json': opts.savedWorkouts || null,
+            'ftp_history.json': opts.ftpHistory || null
         };
 
         var warnings = [];
         var freshness = buildFreshness(files, nowMs);
-        freshness.forEach(function (f) { if (f.stale) warnings.push(f.name + ' data is stale (' + f.age_hours + 'h old)'); });
+        var intent = String(opts.intent || '');
+        var phenotypeRequest = /\bphenotyp(e|ic)\b/i.test(intent);
+        var available = [];
+        var injectedFiles = [];
 
         var memSummary = '';
         if (opts.memory && opts.memory.summary) {
@@ -116,31 +194,41 @@
         parts.push('=== ATHLETE: ' + systemVars.ATHLETE_ID + ' ===');
         parts.push('Now: ' + nowIso + ' (' + systemVars.TZ + ')');
 
-        if (freshness.length) {
-            parts.push('\n-- Data freshness --');
-            freshness.forEach(function (f) {
-                parts.push(f.name + ': ' + f.last_updated + (f.stale ? '  [STALE]' : ''));
-            });
-        }
+        Object.keys(files).forEach(function (name) {
+            available.push(name + ': ' + (files[name] ? 'cached' : 'not cached'));
+        });
+        parts.push('\n-- Available athlete files --');
+        available.forEach(function (entry) { parts.push(entry); });
 
-        var sliced = sliceLatest(files.latest);
+        var sliced = sliceLatest(files['latest.json'], phenotypeRequest);
         if (sliced) {
-            parts.push('\n-- Latest data (Tier 1) --');
-            parts.push(trimJSON(sliced, 6000));
+            injectedFiles.push('latest.json');
+            parts.push(phenotypeRequest
+                ? '\n-- Latest data (Tier 1; phenotype sources) --'
+                : '\n-- Latest data (Tier 1) --');
+            parts.push(trimJSON(sliced, phenotypeRequest ? CONFIG.contextTier2Tokens * 4 : 6000));
         } else {
             parts.push('\n-- Latest data --\n(none cached; prompting sync)');
         }
 
-        if (opts.savedWorkouts && opts.savedWorkouts.workouts) {
-            parts.push('\n-- Saved workouts (recent) --');
-            var recent = opts.savedWorkouts.workouts.slice(-20);
-            parts.push(trimJSON(recent, 2500));
-        }
+        TIER2_FILES.forEach(function (file) {
+            if (!(phenotypeRequest || file.intent.test(intent)) || !files[file.key]) return;
+            injectedFiles.push(file.key);
+            parts.push('\n-- ' + file.key + ' (Tier 2) --');
+            parts.push(trimJSON(files[file.key], CONFIG.contextTier2Tokens * 4));
+        });
 
-        if (files.ftp_history) {
-            parts.push('\n-- FTP history (recent) --');
-            var fh = Array.isArray(files.ftp_history) ? files.ftp_history.slice(-12) : files.ftp_history;
-            parts.push(trimJSON(fh, 1500));
+        var injectedFreshness = freshness.filter(function (file) {
+            return injectedFiles.indexOf(file.name) >= 0;
+        });
+        injectedFreshness.forEach(function (file) {
+            if (file.stale) warnings.push(file.name + ' data is stale (' + file.age_hours + 'h old)');
+        });
+        if (injectedFreshness.length) {
+            parts.push('\n-- Data freshness --');
+            injectedFreshness.forEach(function (file) {
+                parts.push(file.name + ': ' + file.last_updated + (file.stale ? '  [STALE]' : ''));
+            });
         }
 
         if (warnings.length) {
@@ -169,7 +257,9 @@
         sliceLatest: sliceLatest,
         buildFreshness: buildFreshness,
         buildContext: buildContext,
-        LATEST_KEYS: LATEST_KEYS
+        selectHistory: selectHistory,
+        LATEST_KEYS: LATEST_KEYS,
+        TIER2_FILES: TIER2_FILES
     };
     if (typeof module !== 'undefined' && module.exports) module.exports = api;
     if (typeof window !== 'undefined') window.CoachContext = api;

@@ -45,11 +45,9 @@
 
         <!-- COACH TAB -->
         <section id="tab-coach" class="tab-panel active">
-            <div id="dashboard" class="dashboard"></div>
             <div class="chat-toolbar">
                 <div class="chat-toolbar-title">
                     <strong id="activeChatTitle">Your conversation with Coach</strong>
-                    <span id="sessionSyncStatus" role="status">Saved on this device</span>
                 </div>
             </div>
             <div id="chatLog" class="chat-log"></div>
@@ -192,6 +190,12 @@
                 <div class="settings-section">
                     <h3>Install</h3>
                     <button class="btn btn-secondary" onclick="document.getElementById('pwaInstallModal').style.display='flex'">Install App</button>
+                </div>
+
+                <div class="settings-section">
+                    <h3>Status</h3>
+                    <p class="settings-note">Conversation with Coach: <strong id="sessionSyncStatus" role="status">Saved on this device</strong></p>
+                    <div id="dashboard" class="dashboard"></div>
                 </div>
             </div>
         </section>

@@ -27,6 +27,7 @@
         this.skillsReady = Promise.resolve();
         this.dossierCache = '';
         this._memTimer = null;
+        this._chatSyncTimer = null;
         this.chatSessions = [];
         this.activeChatSessionId = '';
         this.deletedChatSessionIds = [];
@@ -369,7 +370,7 @@
     App.prototype._path = function () { return new AthletePath(this.storage.getSettings().athleteId); };
 
     App.prototype.loadCachedData = function () {
-        var names = ['latest.json', 'intervals.json', 'routes.json', 'saved_workouts.json', 'ftp_history.json'];
+        var names = ['latest.json', 'history.json', 'intervals.json', 'routes.json', 'saved_workouts.json', 'ftp_history.json'];
         this._cache = {};
         names.forEach(function (n) { this._cache[n] = this.storage.getCachedData(n); }, this);
     };
@@ -384,6 +385,7 @@
         var p = new AthletePath(id);
         var files = [
             ['latest.json', p.file('latest')],
+            ['history.json', p.file('history')],
             ['intervals.json', p.file('intervals')],
             ['routes.json', p.file('routes')],
             ['saved_workouts.json', p.file('saved_workouts')],
@@ -540,21 +542,52 @@
             this.ui.setSessionSyncStatus('Saved on this device · sync pending', 'pending');
             return;
         }
+        var self = this;
+        clearTimeout(this._chatSyncTimer);
+        this.ui.setSessionSyncStatus('Saved on this device · Drive sync pending', 'pending');
+        this._chatSyncTimer = setTimeout(function () {
+            self.flushChatSessionToDrive();
+        }, CONFIG.chatSessionSyncMs);
+    };
+
+    App.prototype.flushChatSessionToDrive = async function () {
+        var session = this.getActiveChatSession();
+        if (!session || !session.messages.length) return;
+        var settings = this.storage.getSettings();
+        if (!settings.athleteId || !this.drive.isConnected()) {
+            this.ui.setSessionSyncStatus('Saved on this device · sync pending', 'pending');
+            return;
+        }
+        if (this._chatSyncInFlight) {
+            var self = this;
+            this._chatSyncTimer = setTimeout(function () {
+                self.flushChatSessionToDrive();
+            }, 1000);
+            return;
+        }
+        this._chatSyncInFlight = true;
         try {
             var remoteFile = await this.drive.getFile(this._chatSessionPath('ongoing'));
             var saved = await this._syncOneChatSession(session, remoteFile);
+            var current = this.getActiveChatSession();
+            saved = window.ChatSessions.merge(current, saved);
+            saved._synced_at = session.updated_at;
             this.chatSessions[0] = saved;
             var archiveSaved = this._saveChatArchive();
             if (!archiveSaved) {
                 this.ui.setSessionSyncStatus('Drive saved · local status could not be updated', 'error');
                 this.ui.showToast('Chat was saved to Google Drive, but local sync status could not be updated.', 'warning');
             }
-            if (archiveSaved) {
+            if (archiveSaved && saved.updated_at === saved._synced_at) {
                 this.ui.setSessionSyncStatus('Saved to Google Drive', 'saved');
+            } else if (archiveSaved) {
+                this.ui.setSessionSyncStatus('Saved on this device · Drive sync pending', 'pending');
             }
         } catch (error) {
             this.ui.setSessionSyncStatus('Saved on this device · Drive sync failed', 'error');
             this.ui.showToast('Chat saved locally; Google Drive sync failed: ' + error.message, 'warning');
+        } finally {
+            this._chatSyncInFlight = false;
         }
     };
 
@@ -613,7 +646,7 @@
 
     App.prototype.refreshDashboard = function () {
         var files = {};
-        ['latest.json', 'intervals.json', 'routes.json', 'saved_workouts.json', 'ftp_history.json'].forEach(function (n) {
+        ['latest.json', 'history.json', 'intervals.json', 'routes.json', 'saved_workouts.json', 'ftp_history.json'].forEach(function (n) {
             files[n] = this.storage.getCachedData(n);
         }, this);
         this.ui.renderDashboard(window.CoachContext.buildFreshness(files, Date.now()), files['latest.json']);

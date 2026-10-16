@@ -51,10 +51,12 @@
             var ctx = window.CoachContext.buildContext({
                 settings: settings,
                 latest: this.storage.getCachedData('latest.json'),
+                history: this.storage.getCachedData('history.json'),
                 intervals: this.storage.getCachedData('intervals.json'),
                 routes: this.storage.getCachedData('routes.json'),
                 savedWorkouts: this.storage.getCachedData('saved_workouts.json'),
                 ftpHistory: this.storage.getCachedData('ftp_history.json'),
+                intent: text,
                 memory: mem,
                 dossier: this.app.getDossierText(),
                 now: Date.now()
@@ -69,7 +71,7 @@
             }
             sys += '\n\n' + allSkills;
             var ctxMsg = '[CONTEXT]\n' + ctx.dataMessage + '\n[/CONTEXT]';
-            var history = priorMessages.slice(-40).map(function (m) {
+            var history = window.CoachContext.selectHistory(priorMessages, window.CONFIG.contextTier2Tokens).map(function (m) {
                 return { role: m.role === 'assistant' ? 'assistant' : 'user', content: m.text };
             });
 

@@ -43,6 +43,12 @@ Phenotype is not necessarily permanent. Reassess it when sufficient new evidence
 
 Use the repository's configured source hierarchy and instructions.
 
+For a phenotype assessment, read every athlete JSON file listed as cached in the
+current [CONTEXT], not only `latest.json`. The app injects every available source
+for a phenotype request. Confirm the corresponding data sections are present in
+the current [DATA] before using them; ask for a sync if a required file is not
+cached, and do not rely on recollection from earlier turns.
+
 Where available, inspect:
 
 * `latest.json` — current athlete state, power curve, FTP, body mass, recent metrics, and derived observations.

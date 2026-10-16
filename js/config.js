@@ -25,7 +25,8 @@ var CONFIG = {
     pyodideVersion: '0.27.7',
 
     // Timings / limits
-    memoryFlushMs: 15 * 60 * 1000,
+    memoryFlushMs: 5 * 60 * 1000,
+    chatSessionSyncMs: 5 * 60 * 1000,
     syncStaleMs: 30 * 60 * 1000,
     dataStaleMs: 48 * 60 * 60 * 1000,
     syncPollIntervalMs: 5000,

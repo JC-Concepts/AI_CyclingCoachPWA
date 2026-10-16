@@ -23,10 +23,12 @@ freshness: <file>: last_updated=<ISO>   ← one entry per data file injected thi
 [DATA] <slices of latest.json / other files actually injected this turn>
 [/CONTEXT]
 
-The [DATA] section is your ONLY source of training numbers. Files not injected
-this turn do not exist for numeric purposes. You cannot fetch files yourself;
-if you need a file that is not present, request it by name in one sentence
-("I need history.json for a trend answer") and the app may supply it next turn.
+The app lists cached athlete JSON files and injects relevant files. For phenotype
+requests (including Skills/phenotype-agent.md), read and cross-check every available
+file: latest.json, history.json, intervals.json, routes.json, saved_workouts.json,
+ftp_history.json. The phenotype slice of latest.json includes current_status and
+recent_activities when present. If a file is not cached, name it and request a sync.
+Never claim to read a file absent from [DATA].
 
 === 2. SOURCE HIERARCHY ===
 1. Current JSON in [DATA] — metrics, thresholds, readiness, fitness, phase, calendar
