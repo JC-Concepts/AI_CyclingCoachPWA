@@ -10,8 +10,14 @@ self.onmessage = async function (event) {
         encodeURIComponent(input.pyodideVersion) + '/full/';
     var pyodide;
 
-    function report(type, message) {
-        self.postMessage({ type: type, message: message });
+    function report(type, payload) {
+        var message = { type: type };
+        if (payload && typeof payload === 'object') {
+            Object.assign(message, payload);
+        } else if (payload !== undefined) {
+            message.message = payload;
+        }
+        self.postMessage(message);
     }
 
     try {
@@ -63,6 +69,8 @@ self.onmessage = async function (event) {
             '            except Exception as _history_error:\n' +
             '                _engine._record_history_refresh_failure(_history_error)\n' +
             '        _data = _engine.collect_training_data(days_back=_sync_input["days"])\n' +
+            '        if not isinstance(_data, dict):\n' +
+            '            raise TypeError("The sync engine returned an invalid latest.json snapshot.")\n' +
             '        _engine.save_to_file(_data, "latest.json")\n' +
             '        if getattr(_engine, "_intervals_data", None) is not None:\n' +
             '            Path("intervals.json").write_text(json.dumps(_engine._intervals_data, indent=2, default=str), encoding="utf-8")\n' +
@@ -70,8 +78,8 @@ self.onmessage = async function (event) {
             '            Path("routes.json").write_text(json.dumps(_engine._routes_data, indent=2, default=str), encoding="utf-8")\n' +
             '        if getattr(_engine, "_saved_workouts_data", None) is not None:\n' +
             '            _engine._sw_write(_engine._saved_workouts_data)\n' +
-            '        _sync_result["files"] = {}\n' +
-            '        for _filename in ("latest.json", "history.json", "intervals.json", "routes.json", "saved_workouts.json", "ftp_history.json"):\n' +
+            '        _sync_result["files"] = {"latest.json": json.dumps(_data, indent=2, default=str)}\n' +
+            '        for _filename in ("history.json", "intervals.json", "routes.json", "saved_workouts.json", "ftp_history.json"):\n' +
             '            _file_path = Path(_filename)\n' +
             '            if _file_path.is_file():\n' +
             '                _sync_result["files"][_filename] = _file_path.read_text(encoding="utf-8")\n' +

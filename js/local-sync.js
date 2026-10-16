@@ -68,10 +68,12 @@
                 if (message.type !== 'result') return;
 
                 try {
+                    if (message.error) throw new Error(message.error);
                     var returned = message.files || {};
                     if (!Object.prototype.hasOwnProperty.call(returned, 'latest.json') ||
                             typeof returned['latest.json'] !== 'string') {
-                        throw new Error('The sync engine returned no latest.json snapshot.');
+                        throw new Error('The sync worker completed without returning its newly generated latest.json snapshot. ' +
+                            'A previous latest.json file is not required for the first sync.');
                     }
                     var saved = [];
                     for (var j = 0; j < fileNames.length; j++) {

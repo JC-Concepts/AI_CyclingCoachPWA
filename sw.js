@@ -1,5 +1,5 @@
 /* AI Cycling Coach - service worker (relative paths only) */
-const CACHE_NAME = 'ai-cycling-coach-v5';
+const CACHE_NAME = 'ai-cycling-coach-v9';
 const ASSETS_TO_CACHE = [
     './',
     './index.html',
@@ -35,9 +35,17 @@ const ASSETS_TO_CACHE = [
 
 self.addEventListener('install', (event) => {
     event.waitUntil(
-        caches.open(CACHE_NAME)
-            .then((cache) => cache.addAll(ASSETS_TO_CACHE))
-            .then(() => self.skipWaiting())
+        caches.open(CACHE_NAME).then(async (cache) => {
+            await Promise.all(ASSETS_TO_CACHE.map(async (asset) => {
+                const url = new URL(asset, self.registration.scope);
+                url.searchParams.set('__precache', CACHE_NAME);
+                const response = await fetch(url, { cache: 'reload' });
+                if (!response.ok) {
+                    throw new Error('Failed to precache ' + asset + ': ' + response.status);
+                }
+                await cache.put(new URL(asset, self.registration.scope), response);
+            }));
+        }).then(() => self.skipWaiting())
     );
 });
 
