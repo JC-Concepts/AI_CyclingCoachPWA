@@ -190,6 +190,7 @@
     };
 
     UIManager.prototype.showWorkoutDetail = function (w) {
+        var self = this;
         var modal = this.$('workoutModal');
         if (!modal || !w) return;
         this.$('detailName').textContent = w.name || 'Unknown';
@@ -200,9 +201,29 @@
         this.$('detailZone').textContent = w.primary_zone ? ('Zone ' + w.primary_zone) : 'N/A';
         this.$('detailTSS').textContent = (w.tss != null ? w.tss : 0);
         this.$('detailAvgPower').textContent = w.avg_power || 0;
-        this.renderWorkoutIntensity(w);
         window.selectedWorkout = w;
         modal.style.display = 'flex';
+
+        // Fetch .zwo file for segment chart data
+        if (w.file) {
+            var baseUrl = (typeof window !== 'undefined' && window.CONFIG && window.CONFIG.catalogWorkoutsBase)
+                ? window.CONFIG.catalogWorkoutsBase : 'https://raw.githubusercontent.com/JC-Concepts/WorkoutGenerator/refs/heads/main/workouts';
+            var url = baseUrl + '/' + w.file;
+            fetch(url)
+                .then(function (r) { return r.ok ? r.text() : ''; })
+                .then(function (text) {
+                    var segments = self.parseZwoSegments(text);
+                    if (segments && segments.length) {
+                        w.segments = segments;
+                    }
+                    self.renderWorkoutIntensity(w);
+                })
+                .catch(function () {
+                    self.renderWorkoutIntensity(w);
+                });
+        } else {
+            this.renderWorkoutIntensity(w);
+        }
     };
 
     /** Preserved SVG chart from WorkoutGenerator renderWorkoutIntensity. */
@@ -257,6 +278,32 @@
         container.innerHTML =
             '<div class="chart-container"><svg viewBox="0 0 ' + width + ' ' + height + '" class="workout-chart">' +
             gridLines + bars + yLabels + xLabels + '</svg></div>';
+    };
+
+    UIManager.prototype.parseZwoSegments = function (text) {
+        if (!text || typeof text !== 'string') return [];
+        var segments = [];
+        // SteadyState: Duration (sec), Power (fraction of FTP, e.g. 0.5 = 50%)
+        var ssRegex = /<SteadyState\s+Duration="(\d+)"\s+Power="([\d.]+)"/g;
+        var ssMatch;
+        while ((ssMatch = ssRegex.exec(text)) !== null) {
+            segments.push({ duration: parseInt(ssMatch[1], 10), power: parseFloat(ssMatch[2]) * 100 });
+        }
+        // IntervalsT: Repeat, OnDuration, OnPower, OffDuration, OffPower
+        var intRegex = /<IntervalsT\s+Repeat="(\d+)"\s+OnDuration="(\d+)"\s+OnPower="([\d.]+)"\s+OffDuration="(\d+)"\s+OffPower="([\d.]+)"/g;
+        var intMatch;
+        while ((intMatch = intRegex.exec(text)) !== null) {
+            var repeat = parseInt(intMatch[1], 10);
+            var onDur = parseInt(intMatch[2], 10);
+            var onPwr = parseFloat(intMatch[3]) * 100;
+            var offDur = parseInt(intMatch[4], 10);
+            var offPwr = parseFloat(intMatch[5]) * 100;
+            for (var i = 0; i < repeat; i++) {
+                segments.push({ duration: onDur, power: onPwr });
+                segments.push({ duration: offDur, power: offPwr });
+            }
+        }
+        return segments;
     };
 
     UIManager.prototype.formatTime = function (seconds) {

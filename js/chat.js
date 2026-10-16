@@ -61,7 +61,16 @@
                 return { role: m.role === 'assistant' ? 'assistant' : 'user', content: m.text };
             });
 
-            var messages = [{ role: 'system', content: sys }, { role: 'user', content: ctxMsg }]
+            var dossierText = this.app.getDossierText();
+            var interviewMode = text && text.toLowerCase().indexOf('interview') >= 0;
+            var hiddenSkillRequest = 'Load Skills/interval-analysis.md, Skills/workout-agent.md, Skills/health-context.md, Skills/phenotype-agent.md, Skills/workout-catalog.md. These are always active. Load Section 11 protocol (https://raw.githubusercontent.com/CrankAddict/section-11/main/SECTION_11.md) and reference WORKOUT_REFERENCE.md (https://raw.githubusercontent.com/JC-Concepts/WorkoutGenerator/refs/heads/main/WORKOUT_REFERENCE.md) as binding framework sources.';
+            if (interviewMode) {
+                hiddenSkillRequest += ' INTERVIEW MODE ACTIVE: athlete is in dossier intake. Read previous dossier below. Ask ONE question card only, then stop. Do not coach. If previous dossier exists, ask what needs updating.';
+            }
+            if (dossierText) {
+                hiddenSkillRequest += ' PREVIOUS DOSSIER DATA (read before asking):\n' + dossierText.slice(0, 3000);
+            }
+            var messages = [{ role: 'system', content: sys }, { role: 'user', content: hiddenSkillRequest }, { role: 'user', content: ctxMsg }]
                 .concat(history)
                 .concat([{ role: 'user', content: text }]);
 

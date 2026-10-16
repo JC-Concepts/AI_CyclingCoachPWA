@@ -79,6 +79,12 @@ body {
     gap: 0.5rem;
 }
 
+.settings-static {
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+    margin: 0.25rem 0 0;
+}
+
 .donate-btn-header {
     display: inline-flex;
     align-items: center;
@@ -125,6 +131,11 @@ body {
 .install-btn-header svg {
     width: 18px;
     height: 18px;
+}
+
+.install-btn-header, .donate-btn-header {
+    vertical-align: middle;
+    line-height: 1.25;
 }
     background: none;
     border: none;
@@ -955,14 +966,17 @@ body {
 }
 
 .msg {
-    border-radius: 10px;
-    padding: 0.6rem 0.8rem;
+    border-radius: 14px;
+    padding: 0.65rem 0.9rem;
     font-size: 0.9rem;
-    max-width: 92%;
+    max-width: 85%;
     word-wrap: break-word;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+    position: relative;
+    line-height: 1.45;
 }
-.msg-user { align-self: flex-end; background: var(--primary-dark); color: var(--text-primary); }
-.msg-assistant { align-self: flex-start; background: var(--bg-secondary); border: 1px solid var(--border); }
+.msg-user { align-self: flex-end; background: linear-gradient(135deg, var(--primary-dark), var(--primary)); color: #fff; border-bottom-right-radius: 4px; }
+.msg-assistant { align-self: flex-start; background: var(--bg-secondary); border: 1px solid var(--border); border-bottom-left-radius: 4px; }
 .msg-system { align-self: center; background: var(--bg-tertiary); color: var(--text-secondary); font-size: 0.82rem; text-align: center; }
 .msg.streaming::after { content: "▋"; color: var(--primary); animation: blink 1s steps(2, start) infinite; }
 @keyframes blink { to { visibility: hidden; } }

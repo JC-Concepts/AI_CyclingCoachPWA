@@ -295,7 +295,9 @@
     App.prototype.getDossierState = function () { var t = this.getDossierText(); return t ? 'present' : 'missing'; };
 
     App.prototype.startDossierInterview = function () {
-        this.sendChat('Start the onboarding dossier interview. Ask me the first question only, as a single question card, then stop.');
+        var input = document.getElementById('chatInput');
+        if (input) input.value = 'Start the onboarding dossier interview. Ask me the first question only, as a single question card, then stop.';
+        this.sendChat();
     };
 
     App.prototype.confirmDossier = async function (block, cardEl) {
