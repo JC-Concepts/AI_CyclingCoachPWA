@@ -768,21 +768,49 @@ body {
     .logo h1 {
         font-size: 1rem;
     }
-    
+
     .filters-grid {
         grid-template-columns: 1fr;
     }
-    
+
     .detail-stats {
         grid-template-columns: repeat(2, 1fr);
     }
-    
+
     .detail-actions {
         flex-direction: column;
     }
-    
+
     .action-btn {
         width: 100%;
+    }
+
+    /* Mobile PWA: the sticky header + tab bar consume a larger share of the
+       dynamic viewport, so the tab panel must be allowed to shrink and the
+       results area must remain scrollable. Using dvh here lets the panel
+       resize when the browser chrome (address bar / bottom nav) hides or
+       shows, instead of clipping content at a stale fixed height. */
+    .tab-panel.active {
+        height: calc(100dvh - 110px);
+        max-height: calc(100dvh - 110px);
+    }
+
+    .search-section {
+        padding: 0.75rem 0.5rem;
+        flex-shrink: 0;
+    }
+
+    .results-section {
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+        padding: 0 0.5rem;
+    }
+
+    .workouts-grid {
+        grid-template-columns: 1fr;
+        gap: 0.75rem;
     }
 }
 
@@ -976,9 +1004,17 @@ body {
 .tab-panel.active {
     display: flex;
     flex-direction: column;
-    height: calc(100vh - 140px);
-    max-height: calc(100vh - 140px);
+    height: calc(100dvh - 140px);
+    max-height: calc(100dvh - 140px);
     overflow: hidden;
+}
+
+/* Fallback for browsers without dynamic viewport units (older iOS Safari, some Android). */
+@supports not (height: calc(100dvh - 1px)) {
+    .tab-panel.active {
+        height: calc(100vh - 140px);
+        max-height: calc(100vh - 140px);
+    }
 }
 
 #tab-settings.tab-panel.active {
