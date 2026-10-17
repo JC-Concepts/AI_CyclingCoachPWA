@@ -191,3 +191,99 @@ test('an expired or missing token requires a new user authorization', async () =
         return error.code === 'AUTH_REQUIRED';
     });
 });
+
+// reconnect / 401-refresh tests
+function reconnectStore(promptBehaviors, fetchImpl) {
+    // promptBehaviors: { 'none': {...}, '': {...} } — each is the response
+    // the fake token client returns for that prompt mode.
+    const calls = [];
+    const fakeWindow = {
+        google: {
+            accounts: {
+                oauth2: {
+                    initTokenClient: function (options) {
+                        return {
+                            requestAccessToken: function (opts) {
+                                var prompt = (opts && opts.prompt !== undefined) ? opts.prompt : '';
+                                calls.push({ prompt: prompt });
+                                var behavior = promptBehaviors[prompt];
+                                if (!behavior) {
+                                    options.callback({ error: 'invalid_request', error_description: 'unknown prompt' });
+                                    return;
+                                }
+                                if (behavior.error) {
+                                    options.error_callback({ message: behavior.error });
+                                    return;
+                                }
+                                options.callback({ access_token: behavior.token, expires_in: behavior.expires_in || 3600 });
+                            }
+                        };
+                    },
+                    revoke: function () {}
+                }
+            }
+        }
+    };
+    const store = new GoogleDriveStore({ window: fakeWindow, fetch: fetchImpl || (function () { throw new Error('unexpected fetch'); }) });
+    return { store: store, calls: calls };
+}
+
+test('reconnect restores a session silently with prompt none', async () => {
+    const { store, calls } = reconnectStore({
+        'none': { token: 'silent-token', expires_in: 3600 }
+    });
+    await store.reconnect('public-client-id.example.apps.googleusercontent.com');
+    assert.equal(store.isConnected(), true);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].prompt, 'none');
+});
+
+test('reconnect falls back to consent when silent refresh fails', async () => {
+    const { store, calls } = reconnectStore({
+        'none': { error: 'consent_required' },
+        '': { token: 'consent-token', expires_in: 3600 }
+    });
+    await store.reconnect('public-client-id.example.apps.googleusercontent.com');
+    assert.equal(store.isConnected(), true);
+    assert.equal(calls.length, 2);
+    assert.equal(calls[0].prompt, 'none');
+    assert.equal(calls[1].prompt, '');
+});
+
+test('a 401 response triggers a silent token refresh before failing', async () => {
+    var fetchCalls = 0;
+    const { store } = reconnectStore({
+        '': { token: 'initial-token', expires_in: 3600 },
+        'none': { token: 'refreshed-token', expires_in: 3600 }
+    }, async function (url, options) {
+        fetchCalls++;
+        if (fetchCalls === 1) {
+            return { status: 401, ok: false, text: async function () { return 'unauthorized'; } };
+        }
+        assert.equal(options.headers.Authorization, 'Bearer refreshed-token');
+        return { status: 200, ok: true, json: async function () { return { files: [] }; }, text: async function () { return ''; } };
+    });
+    await store.connect('public-client-id.example.apps.googleusercontent.com');
+    // Force the stored token to be the old one so the first fetch 401s.
+    store._token = 'stale-token';
+    store._expiresAt = Date.now() + 60 * 1000;
+    var response = await store._authorizedFetch('https://www.googleapis.com/drive/v3/files');
+    assert.equal(response.status, 200);
+    assert.equal(store._token, 'refreshed-token');
+    assert.equal(fetchCalls, 2);
+});
+
+test('a 401 that cannot be refreshed fails with AUTH_REQUIRED', async () => {
+    const { store } = reconnectStore({
+        '': { token: 'initial-token', expires_in: 3600 },
+        'none': { error: 'consent_required' }
+    }, async function () {
+        return { status: 401, ok: false, text: async function () { return 'unauthorized'; } };
+    });
+    await store.connect('public-client-id.example.apps.googleusercontent.com');
+    store._token = 'stale-token';
+    store._expiresAt = Date.now() + 60 * 1000;
+    await assert.rejects(store._authorizedFetch('https://www.googleapis.com/drive/v3/files'), function (error) {
+        return error.code === 'AUTH_REQUIRED';
+    });
+});

@@ -28,6 +28,7 @@
         this.dossierCache = '';
         this._memTimer = null;
         this._chatSyncTimer = null;
+        this._tokenTimer = null;
         this.chatSessions = [];
         this.activeChatSessionId = '';
         this.deletedChatSessionIds = [];
@@ -48,8 +49,12 @@
             this.storage.saveSettings(settings);
         }
         this.ui.fillSettingsForm(settings);
-        this.ui.setDriveStatus(false);
         this.setActiveTab('coach');
+        // Attempt a silent session restore so the Google account stays
+        // connected across page reloads / PWA restarts. GIS access tokens
+        // expire in one hour and are not persisted, so we re-request with
+        // prompt 'none' (no UI) and only fall back to consent if needed.
+        this._restoreDriveSession();
         this.skillsReady = this.loadSkills();
 
         // event listeners
@@ -120,6 +125,7 @@
         if (settings.provider === 'gemini') this.loadGeminiModels(false);
         else this.loadModels(false);
         this.startMemoryFlush();
+        this.startTokenWatch();
         await this.loadAthleteData().catch(function (error) {
             self.ui.showToast('Could not load private Google Drive data: ' + error.message, 'warning');
         });
@@ -296,6 +302,25 @@
         this.ui.setDriveStatus(false);
         this.renderChatSession();
         this.ui.showToast('Google Drive disconnected. Local cached data remains on this device.', 'info');
+    };
+
+    // Silent session restore on startup. GIS tokens expire in one hour and
+    // are never persisted, so a reload or PWA restart would otherwise force
+    // the user to click Connect again. We try prompt 'none' first (no UI);
+    // if the grant has expired or been revoked we fall back to prompt ''
+    // (re-consent). Failures are non-fatal — the user can still click Connect.
+    App.prototype._restoreDriveSession = function () {
+        var self = this;
+        this.drive.prepare().then(function () {
+            return self.drive.reconnect(CONFIG.googleClientId);
+        }).then(function () {
+            self.ui.setDriveStatus(true);
+            return self.loadAthleteData();
+        }).then(function () {
+            self.ui.showToast('Google Drive session restored.', 'success');
+        }).catch(function () {
+            self.ui.setDriveStatus(false);
+        });
     };
 
     App.prototype.reloadAthleteData = async function () {
@@ -873,6 +898,25 @@
         var self = this;
         this._memTimer = setInterval(function () { self.flushMemory(); }, CONFIG.memoryFlushMs);
         window.addEventListener('pagehide', function () { self.flushMemory(); });
+    };
+
+    // Watch the Google access-token expiry and silently renew it before it
+    // lapses, so the account stays connected without user intervention.
+    App.prototype.startTokenWatch = function () {
+        var self = this;
+        if (this._tokenTimer) return;
+        this._tokenTimer = setInterval(function () {
+            if (!self.drive || !self.drive._clientId) return;
+            // Renew when fewer than 5 minutes of validity remain.
+            var remaining = (self.drive._expiresAt || 0) - Date.now();
+            if (remaining > 5 * 60 * 1000) return;
+            self.drive.reconnect(CONFIG.googleClientId).then(function () {
+                self.ui.setDriveStatus(true);
+            }).catch(function () {
+                self.ui.setDriveStatus(false);
+                self.ui.showToast('Google Drive session expired. Connect again.', 'warning');
+            });
+        }, 60 * 1000);
     };
 
     App.prototype.flushMemory = async function () {

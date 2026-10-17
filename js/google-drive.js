@@ -30,8 +30,9 @@
         this.Blob = options.Blob || (typeof Blob !== 'undefined' ? Blob : null);
         this._token = '';
         this._expiresAt = 0;
-        this._scriptPromise = null;
-        this._resetFolderCache();
+                this._clientId = '';
+                this._scriptPromise = null;
+                this._resetFolderCache();
     }
 
     GoogleDriveStore.prototype._resetFolderCache = function () {
@@ -77,62 +78,87 @@
         return this._loadIdentityLibrary();
     };
 
-    GoogleDriveStore.prototype._requestToken = function (clientId) {
-        var self = this;
-        return new Promise(function (resolve, reject) {
-            var settled = false;
-            var client = self.window.google.accounts.oauth2.initTokenClient({
-                client_id: String(clientId).trim(),
-                scope: DRIVE_SCOPE,
-                callback: function (response) {
-                    if (settled) return;
-                    settled = true;
-                    if (!response || response.error || !response.access_token) {
-                        self._token = '';
-                        self._expiresAt = 0;
-                        reject(new Error((response && response.error_description) ||
-                            (response && response.error) || 'Google Drive authorization was not granted.'));
-                        return;
-                    }
-                    self._token = response.access_token;
-                    self._expiresAt = Date.now() + Math.max(0, Number(response.expires_in) || 3600) * 1000;
-                    self._resetFolderCache();
-                    resolve(true);
-                },
-                error_callback: function (error) {
-                    if (settled) return;
-                    settled = true;
-                    reject(new Error((error && error.message) || 'Google sign-in was cancelled.'));
-                }
+    // Request a token with the given GIS prompt mode. prompt '' = show consent
+    // only when needed; 'none' = never show UI (silent refresh); 'consent' =
+    // always show the consent screen. Resolves true when a token is stored.
+        GoogleDriveStore.prototype._requestToken = function (clientId, prompt) {
+            var self = this;
+            prompt = (prompt === undefined) ? '' : prompt;
+            return this._ensureLibrary().then(function () {
+                return new Promise(function (resolve, reject) {
+                    var settled = false;
+                    var client = self.window.google.accounts.oauth2.initTokenClient({
+                        client_id: String(clientId).trim(),
+                        scope: DRIVE_SCOPE,
+                        callback: function (response) {
+                            if (settled) return;
+                            settled = true;
+                            if (!response || response.error || !response.access_token) {
+                                self._token = '';
+                                self._expiresAt = 0;
+                                reject(new Error((response && response.error_description) ||
+                                    (response && response.error) || 'Google Drive authorization was not granted.'));
+                                return;
+                            }
+                            self._token = response.access_token;
+                            self._expiresAt = Date.now() + Math.max(0, Number(response.expires_in) || 3600) * 1000;
+                            self._resetFolderCache();
+                            resolve(true);
+                        },
+                        error_callback: function (error) {
+                            if (settled) return;
+                            settled = true;
+                            reject(new Error((error && error.message) || 'Google sign-in was cancelled.'));
+                        }
+                    });
+                    client.requestAccessToken({ prompt: prompt });
+                });
             });
-            client.requestAccessToken({ prompt: '' });
-        });
-    };
+        };
 
-    GoogleDriveStore.prototype.connect = function (clientId) {
-        if (!clientId || !String(clientId).trim()) {
-            throw new Error('The app owner must configure a Google OAuth web client ID.');
-        }
-        if (this.window && this.window.google && this.window.google.accounts &&
-                this.window.google.accounts.oauth2) {
-            return this._requestToken(clientId);
-        }
-        var self = this;
-        return this._loadIdentityLibrary().then(function () {
-            return self._requestToken(clientId);
-        });
-    };
+        // Wait for the GIS library to load.
+        GoogleDriveStore.prototype._ensureLibrary = function () {
+            if (this.window && this.window.google && this.window.google.accounts &&
+                    this.window.google.accounts.oauth2) {
+                return Promise.resolve();
+            }
+            return this._loadIdentityLibrary();
+        };
+
+        // Public connect: show consent only when needed (first grant or re-consent).
+        GoogleDriveStore.prototype.connect = function (clientId) {
+            if (!clientId || !String(clientId).trim()) {
+                throw new Error('The app owner must configure a Google OAuth web client ID.');
+            }
+            this._clientId = String(clientId).trim();
+            return this._requestToken(clientId, '');
+        };
+
+        // Silent session restore: try prompt 'none' first (no UI). If Google
+        // rejects that (grant expired/revoked), fall back to prompt '' so the
+        // user can re-consent without a full page reload. Resolves true when a
+        // token is obtained; rejects only when the user must explicitly connect.
+        GoogleDriveStore.prototype.reconnect = function (clientId) {
+            var self = this;
+            this._clientId = String(clientId).trim();
+            return this._requestToken(clientId, 'none').then(function () {
+                return true;
+            }, function (silentError) {
+                return self._requestToken(clientId, '');
+            });
+        };
 
     GoogleDriveStore.prototype.disconnect = function () {
         var token = this._token;
         this._token = '';
         this._expiresAt = 0;
-        this._resetFolderCache();
-        if (token && this.window && this.window.google && this.window.google.accounts &&
-                this.window.google.accounts.oauth2) {
-            this.window.google.accounts.oauth2.revoke(token, function () {});
-        }
-    };
+            this._clientId = '';
+            this._resetFolderCache();
+            if (token && this.window && this.window.google && this.window.google.accounts &&
+                    this.window.google.accounts.oauth2) {
+                this.window.google.accounts.oauth2.revoke(token, function () {});
+            }
+        };
 
     GoogleDriveStore.prototype._authorizedFetch = async function (url, options) {
         if (!this.fetch) throw new Error('Network access is unavailable.');
@@ -146,11 +172,30 @@
         });
         var response = await this.fetch(url, options);
         if (response.status === 401) {
-            this._token = '';
-            this._expiresAt = 0;
-            this._resetFolderCache();
-            throw makeError('Google Drive authorization expired. Connect again.', 'AUTH_REQUIRED', 401);
-        }
+                // Token was rejected mid-flight (revoked, security challenge, or
+                // simply expired since the last check). Try one silent refresh
+                // before failing the request — this is what makes the Google
+                // account "stay connected" across the one-hour token lifetime.
+                var clientId = this._clientId;
+                if (clientId) {
+                    try {
+                        await this._requestToken(clientId, 'none');
+                        options.headers.Authorization = 'Bearer ' + this._token;
+                        response = await this.fetch(url, options);
+                    } catch (refreshError) {
+                        this._token = '';
+                        this._expiresAt = 0;
+                        this._resetFolderCache();
+                        throw makeError('Google Drive authorization expired. Connect again.', 'AUTH_REQUIRED', 401);
+                    }
+                }
+                if (response.status === 401) {
+                    this._token = '';
+                    this._expiresAt = 0;
+                    this._resetFolderCache();
+                    throw makeError('Google Drive authorization expired. Connect again.', 'AUTH_REQUIRED', 401);
+                }
+            }
         if (response.status === 409 || response.status === 412) {
             throw makeError('Google Drive file changed on another device.', 409, response.status);
         }
